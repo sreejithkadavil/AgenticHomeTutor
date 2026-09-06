@@ -79,9 +79,15 @@ export default function Study() {
       data: { answer: userMessage, inputMode: "text" }
     }, {
       onSuccess: (data) => {
-        setHistory(prev => [...prev, { role: 'tutor', content: data.response, type: data.responseType }]);
+        setHistory(prev => [
+          ...prev,
+          { role: 'tutor', content: data.response, type: data.responseType },
+          ...(data.responseType !== "complete" && data.nextPrompt
+            ? [{ role: 'tutor' as const, content: data.nextPrompt, type: data.nextPromptType }]
+            : []),
+        ]);
         setMastery(data.mastery);
-        
+
         if (data.responseType === "complete") {
           // Auto complete after short delay
           setTimeout(() => handleComplete(), 2000);
