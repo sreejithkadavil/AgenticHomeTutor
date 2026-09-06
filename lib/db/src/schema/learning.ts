@@ -98,6 +98,8 @@ export const sessionsTable = pgTable("study_sessions", {
   objectiveId: text("objective_id").notNull(),
   status: text("status").notNull().default("active"),
   turnCount: integer("turn_count").notNull().default(0),
+  /** The most recent question/prompt the tutor asked, used as grading context for the next turn. */
+  currentPrompt: text("current_prompt").notNull().default(""),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });

@@ -47,6 +47,11 @@ import {
   class6Objectives,
   type Class6Objective,
 } from "../data/class6Curriculum";
+import {
+  classifyTutorAnswer,
+  gradeTutorAnswer,
+  TutorGradingUnavailableError,
+} from "../lib/tutorGrading";
 
 const router: IRouter = Router();
 let curriculumSeedPromise: Promise<void> | null = null;
@@ -512,6 +517,7 @@ router.post(
       return;
     }
 
+    const prompt = `Let's work on ${selected.objective.toLowerCase()}. Explain the idea in your own words and give one example, even if you are not completely sure.`;
     const [session] = await db
       .insert(sessionsTable)
       .values({
@@ -520,6 +526,7 @@ router.post(
         objectiveId: selected.objectiveId,
         status: "active",
         turnCount: 0,
+        currentPrompt: prompt,
       })
       .returning();
 
@@ -530,7 +537,7 @@ router.post(
         subject: selected.subject,
         topic: selected.topic,
         objective: selected.objective,
-        prompt: `Let's work on ${selected.objective.toLowerCase()}. Explain the idea in your own words and give one example, even if you are not completely sure.`,
+        prompt,
         promptType: "question",
         turnCount: 0,
         estimatedMinutes: 12,
@@ -556,6 +563,7 @@ router.post(
         session: sessionsTable,
         objective: objectivesTable,
         mastery: masteryTable,
+        student: studentsTable,
       })
       .from(sessionsTable)
       .innerJoin(
@@ -569,6 +577,7 @@ router.post(
           eq(masteryTable.studentId, sessionsTable.studentId),
         ),
       )
+      .innerJoin(studentsTable, eq(sessionsTable.studentId, studentsTable.id))
       .where(eq(sessionsTable.id, params.data.sessionId))
       .limit(1);
 
@@ -578,37 +587,39 @@ router.post(
     }
     if (!await accessibleStudent(user, row.session.studentId)) { res.status(404).json({ error: "Study session not found" }); return; }
 
-    const normalized = body.data.answer.toLowerCase();
-    const topicWords = row.objective.topic
-      .toLowerCase()
-      .split(/\W+/)
-      .filter((word) => word.length >= 4);
-    const usesTopicLanguage = topicWords.some((word) => normalized.includes(word));
-    const isCorrect = normalized.trim().length >= 40 && usesTopicLanguage;
-    const isAlmost =
-      !isCorrect &&
-      (usesTopicLanguage || normalized.trim().length >= 18);
-    const evaluation = isCorrect
-      ? "correct"
-      : isAlmost
-        ? "almost"
-        : "incorrect";
-    const delta = isCorrect ? 0.1 : isAlmost ? 0.03 : -0.02;
+    let grade;
+    try {
+      grade = await gradeTutorAnswer({
+        studentName: row.student.name,
+        subject: row.objective.subject,
+        topic: row.objective.topic,
+        objective: row.objective.objective,
+        priorPrompt: row.session.currentPrompt,
+        studentAnswer: body.data.answer,
+      });
+    } catch (error) {
+      if (error instanceof TutorGradingUnavailableError) {
+        req.log.error({ err: error }, "Tutor grading unavailable");
+        res.status(503).json({ error: "Tutor grading is not configured or is temporarily unavailable. Please try again shortly." });
+        return;
+      }
+      req.log.error({ err: error }, "Tutor grading request failed");
+      res.status(502).json({ error: "Unable to grade this answer right now. Please try again." });
+      return;
+    }
+
+    const { evaluation, misconception, feedback, nextPrompt } = grade;
+    const delta = evaluation === "correct" ? 0.1 : evaluation === "almost" ? 0.03 : -0.02;
     const nextMastery = Math.max(
       0.05,
       Math.min(0.98, row.mastery.mastery + delta),
     );
     const turnCount = row.session.turnCount + 1;
-    const misconception = isCorrect
-      ? null
-      : isAlmost
-        ? "The core idea is present, but the explanation needs a specific example or supporting reason."
-        : "The response does not yet connect clearly to the target concept.";
 
     await db.transaction(async (tx) => {
       await tx
         .update(sessionsTable)
-        .set({ turnCount })
+        .set({ turnCount, currentPrompt: nextPrompt })
         .where(eq(sessionsTable.id, row.session.id));
       await tx
         .update(masteryTable)
@@ -630,22 +641,11 @@ router.post(
       });
     });
 
-    const response = isCorrect
-      ? `Good explanation. You connected your example to ${row.objective.topic.toLowerCase()} and made the reasoning visible.`
-      : isAlmost
-        ? "You have the central idea. Strengthen it with one concrete example and explain why that example fits."
-        : `Let’s make this smaller. Start by defining ${row.objective.topic.toLowerCase()} in one sentence, then we will build an example together.`;
-    const nextPrompt = isCorrect
-      ? "Now give a different example and explain what would change if one important condition were removed."
-      : isAlmost
-        ? "What is one specific example, and which part of your explanation does it support?"
-        : `In your own words, what does ${row.objective.topic.toLowerCase()} mean?`;
-
     res.json(
       SubmitTutorTurnResponse.parse({
         sessionId: row.session.id,
-        response,
-        responseType: isCorrect ? "retest" : "hint",
+        response: feedback,
+        responseType: evaluation === "correct" ? "retest" : "hint",
         evaluation,
         mastery: nextMastery,
         nextPrompt,
@@ -771,14 +771,30 @@ router.post("/study-sessions/:sessionId/realtime-turns", async (req, res): Promi
   if (!row || !await accessibleStudent(user, row.session.studentId)) { res.status(404).json({ error: "Study session not found" }); return; }
   if (row.session.status !== "active") { res.status(409).json({ error: "Study session is no longer active" }); return; }
   const answer = body.data.studentTranscript;
-  const topicWords = row.objective.topic.toLowerCase().split(/\W+/).filter((word) => word.length >= 4);
-  const normalized = answer.toLowerCase();
-  const usesTopicLanguage = topicWords.some((word) => normalized.includes(word));
-  const evaluation = normalized.trim().length >= 40 && usesTopicLanguage ? "correct" : (usesTopicLanguage || normalized.trim().length >= 18 ? "almost" : "incorrect");
+
+  let classification;
+  try {
+    classification = await classifyTutorAnswer({
+      subject: row.objective.subject,
+      topic: row.objective.topic,
+      objective: row.objective.objective,
+      context: body.data.assistantTranscript,
+      studentAnswer: answer,
+    });
+  } catch (error) {
+    if (error instanceof TutorGradingUnavailableError) {
+      req.log.error({ err: error }, "Tutor grading unavailable for realtime turn");
+      res.status(503).json({ error: "Tutor grading is not configured or is temporarily unavailable." });
+      return;
+    }
+    req.log.error({ err: error }, "Tutor grading request failed for realtime turn");
+    res.status(502).json({ error: "Unable to grade this exchange right now." });
+    return;
+  }
+  const { evaluation, misconception } = classification;
   const delta = evaluation === "correct" ? 0.1 : evaluation === "almost" ? 0.03 : -0.02;
   const mastery = Math.max(0.05, Math.min(0.98, row.mastery.mastery + delta));
   const turnCount = row.session.turnCount + 1;
-  const misconception = evaluation === "correct" ? null : "Review the target idea with a concrete example before moving on.";
   await db.transaction(async (tx) => {
     await tx.update(sessionsTable).set({ turnCount }).where(eq(sessionsTable.id, row.session.id));
     await tx.update(masteryTable).set({ mastery, trend: delta > 0 ? "up" : "down", lastPracticed: "Just now", updatedAt: new Date() }).where(eq(masteryTable.id, row.mastery.id));
