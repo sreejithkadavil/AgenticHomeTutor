@@ -63,6 +63,11 @@ let curriculumSeedPromise: Promise<void> | null = null;
 
 type CurrentUser = typeof appUsersTable.$inferSelect;
 
+function canonicalGrade(grade: string): string {
+  const gradeNumber = grade.match(/\d+/)?.[0];
+  return gradeNumber ? `Grade ${gradeNumber}` : grade.trim();
+}
+
 async function currentUser(req: Request, res: Response): Promise<CurrentUser | null> {
   const auth = getAuth(req);
   const subject = auth?.sessionClaims?.userId || auth?.userId;
@@ -309,34 +314,12 @@ router.get("/dashboard", async (req, res): Promise<void> => {
     GetDashboardResponse.parse({
       student: asStudent(student),
       overallMastery,
-      masteryDelta: 0.07,
-      studyMinutes: 86,
-      sessionsThisWeek: 4,
+      masteryDelta: 0,
+      studyMinutes: 0,
+      sessionsThisWeek: 0,
       revisionDue: revisionRows.filter((item) => item.daysUntil <= 0).length,
-      weakArea: "Using evidence to support an inference",
-      recentActivity: [
-        {
-          id: "activity-1",
-          title: "Reading inference practice",
-          detail: "Arya improved after a targeted hint.",
-          timeLabel: "Today, 4:18 PM",
-          type: "session",
-        },
-        {
-          id: "activity-2",
-          title: "New worksheet mapped",
-          detail: "Fractions practice set matched to 1 learning objective.",
-          timeLabel: "Today, 9:16 AM",
-          type: "material",
-        },
-        {
-          id: "activity-3",
-          title: "Revision scheduled",
-          detail: "Fractions will return tomorrow for a short retest.",
-          timeLabel: "Yesterday",
-          type: "revision",
-        },
-      ],
+      weakArea: "",
+      recentActivity: [],
       subjectSummary: [...grouped.entries()].map(([subject, value]) => ({
         subject,
         mastery: value.total / value.count,
@@ -388,15 +371,6 @@ router.post("/students", async (req, res): Promise<void> => {
       nextSession: "Ready when you are",
     })
     .returning();
-  const objectives = await db.select().from(objectivesTable)
-    .where(eq(objectivesTable.grade, student.grade));
-  if (objectives.length) {
-    await db.insert(masteryTable).values(objectives.map((objective) => ({
-      id: randomUUID(), studentId: student.id, objectiveId: objective.id,
-      mastery: 0.2, trend: "steady", lastPracticed: "Not started",
-    })));
-  }
-
   res.status(201).json(CreateStudentResponse.parse(asStudent(student)));
 });
 
@@ -531,12 +505,15 @@ router.post(
         objective: objectivesTable.objective,
         mastery: masteryTable.mastery,
       })
-      .from(masteryTable)
-      .innerJoin(
-        objectivesTable,
-        eq(masteryTable.objectiveId, objectivesTable.id),
+      .from(objectivesTable)
+      .leftJoin(
+        masteryTable,
+        and(
+          eq(masteryTable.objectiveId, objectivesTable.id),
+          eq(masteryTable.studentId, params.data.studentId),
+        ),
       )
-      .where(eq(masteryTable.studentId, params.data.studentId))
+      .where(eq(objectivesTable.grade, canonicalGrade(student.grade)))
       .orderBy(asc(masteryTable.mastery));
 
     const selected =
@@ -567,19 +544,37 @@ router.post(
       req.log.warn({ err: error }, "Falling back to a templated session opener; concept explanation is unavailable");
     }
 
-    const [session] = await db
-      .insert(sessionsTable)
-      .values({
-        id: randomUUID(),
-        studentId: params.data.studentId,
-        objectiveId: selected.objectiveId,
-        status: "active",
-        turnCount: 0,
-        currentPrompt: prompt,
-        objectivesCovered: [selected.objectiveId],
-        exercisePending: false,
-      })
-      .returning();
+    const [session] = await db.transaction(async (tx) => {
+      // Objectives are matched to this student by grade, not by a
+      // pre-seeded mastery row (student creation no longer seeds one) — so
+      // the first time a student works on a given objective, create its
+      // mastery row now. Every later route (turn submission, revision,
+      // dashboard) inner-joins on this row, so without it the session
+      // would 404 on the very first answer.
+      if (selected.mastery === null) {
+        await tx.insert(masteryTable).values({
+          id: randomUUID(),
+          studentId: params.data.studentId,
+          objectiveId: selected.objectiveId,
+          mastery: 0.15,
+          trend: "steady",
+          lastPracticed: "Not started",
+        });
+      }
+      return tx
+        .insert(sessionsTable)
+        .values({
+          id: randomUUID(),
+          studentId: params.data.studentId,
+          objectiveId: selected.objectiveId,
+          status: "active",
+          turnCount: 0,
+          currentPrompt: prompt,
+          objectivesCovered: [selected.objectiveId],
+          exercisePending: false,
+        })
+        .returning();
+    });
 
     res.status(201).json(
       StartStudySessionResponse.parse({

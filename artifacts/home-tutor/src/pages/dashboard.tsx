@@ -54,8 +54,9 @@ export default function Dashboard() {
   }
 
   const handleFastStart = () => {
+    const subject = dashboard?.weakArea?.trim();
     const params = new URLSearchParams();
-    if (dashboard?.weakArea) params.set("subject", dashboard.weakArea);
+    if (subject) params.set("subject", subject);
     setLocation(params.size ? `/study?${params}` : "/study");
   };
 

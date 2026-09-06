@@ -46,7 +46,7 @@ export default function Study() {
   }, [history]);
 
   useEffect(() => {
-    if (!student || sessionId || startSession.isPending) return;
+    if (!student || sessionId || startSession.isPending || startSession.isError) return;
     const params = new URLSearchParams(search);
     const subject = params.get("subject") ?? undefined;
     const objectiveId = params.get("objectiveId") ?? undefined;
@@ -69,6 +69,21 @@ export default function Study() {
   }, [sessionId, elapsedSeconds]);
 
   if (!student) return null;
+
+  if (!sessionId && startSession.isError) {
+    return (
+      <div className="max-w-md mx-auto mt-24 text-center space-y-4">
+        <div className="w-14 h-14 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
+          <AlertCircle className="w-7 h-7 text-destructive" />
+        </div>
+        <h2 className="text-xl font-bold">Could not start the session</h2>
+        <p className="text-sm text-muted-foreground">
+          {startSession.error instanceof Error ? startSession.error.message : "Something went wrong. Please try again."}
+        </p>
+        <Button onClick={() => startSession.reset()}>Try Again</Button>
+      </div>
+    );
+  }
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
