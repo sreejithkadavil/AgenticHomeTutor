@@ -233,7 +233,14 @@ function parseImportedObjectives(input: {
   });
 }
 
-async function selectNextObjective(studentId: string, excludeObjectiveIds: string[]) {
+/**
+ * Picks the next weakest not-yet-covered objective for a session to advance
+ * to. Scoped to `subject` so a session started on one subject (e.g. French)
+ * never silently jumps to an unrelated one (e.g. Math) mid-session — a
+ * session only ever moves within the subject the student/parent picked it
+ * for; it completes once that subject is exhausted rather than wandering.
+ */
+async function selectNextObjective(studentId: string, subject: string, excludeObjectiveIds: string[]) {
   const candidates = await db
     .select({
       objectiveId: objectivesTable.id,
@@ -244,7 +251,7 @@ async function selectNextObjective(studentId: string, excludeObjectiveIds: strin
     })
     .from(masteryTable)
     .innerJoin(objectivesTable, eq(masteryTable.objectiveId, objectivesTable.id))
-    .where(eq(masteryTable.studentId, studentId))
+    .where(and(eq(masteryTable.studentId, studentId), eq(objectivesTable.subject, subject)))
     .orderBy(asc(masteryTable.mastery));
   return candidates.find((candidate) => !excludeObjectiveIds.includes(candidate.objectiveId)) ?? null;
 }
@@ -676,7 +683,7 @@ router.post(
       const covered = objectivesCovered.includes(row.session.objectiveId)
         ? objectivesCovered
         : [...objectivesCovered, row.session.objectiveId];
-      const next = await selectNextObjective(row.session.studentId, covered);
+      const next = await selectNextObjective(row.session.studentId, row.objective.subject, covered);
       if (!next) {
         responseType = "complete";
       } else {
