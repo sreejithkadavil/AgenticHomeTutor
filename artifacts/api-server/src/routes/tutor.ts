@@ -63,6 +63,11 @@ let curriculumSeedPromise: Promise<void> | null = null;
 
 type CurrentUser = typeof appUsersTable.$inferSelect;
 
+function canonicalGrade(grade: string): string {
+  const gradeNumber = grade.match(/\d+/)?.[0];
+  return gradeNumber ? `Grade ${gradeNumber}` : grade.trim();
+}
+
 async function currentUser(req: Request, res: Response): Promise<CurrentUser | null> {
   const auth = getAuth(req);
   const subject = auth?.sessionClaims?.userId || auth?.userId;
@@ -499,12 +504,15 @@ router.post(
         objective: objectivesTable.objective,
         mastery: masteryTable.mastery,
       })
-      .from(masteryTable)
-      .innerJoin(
-        objectivesTable,
-        eq(masteryTable.objectiveId, objectivesTable.id),
+      .from(objectivesTable)
+      .leftJoin(
+        masteryTable,
+        and(
+          eq(masteryTable.objectiveId, objectivesTable.id),
+          eq(masteryTable.studentId, params.data.studentId),
+        ),
       )
-      .where(eq(masteryTable.studentId, params.data.studentId))
+      .where(eq(objectivesTable.grade, canonicalGrade(student.grade)))
       .orderBy(asc(masteryTable.mastery));
 
     const selected =

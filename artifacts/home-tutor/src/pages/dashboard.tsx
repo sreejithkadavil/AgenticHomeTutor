@@ -56,8 +56,9 @@ export default function Dashboard() {
   }
 
   const handleFastStart = () => {
+    const subject = dashboard?.weakArea?.trim();
     startSession.mutate(
-      { studentId: student.id, data: { subject: dashboard?.weakArea } },
+      { studentId: student.id, data: subject ? { subject } : {} },
       {
         onSuccess: () => {
           setLocation("/study");
@@ -90,6 +91,11 @@ export default function Dashboard() {
           </Button>
         </div>
       </div>
+      {startSession.isError && (
+        <p className="text-sm text-destructive" role="alert">
+          Could not start the session. Please try again.
+        </p>
+      )}
 
       {/* Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
