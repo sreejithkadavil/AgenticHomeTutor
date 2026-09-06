@@ -477,7 +477,12 @@ components:
         misconception:
           type: [string, "null"]
         canUseVoice: { type: boolean }
-      required: [sessionId, response, responseType, evaluation, mastery, nextPrompt, nextPromptType, turnCount, misconception, canUseVoice]
+        subject:
+          type: string
+          description: The subject of the objective this turn's nextPrompt is about — may change mid-session if the tutor advanced to a new concept.
+        topic: { type: string }
+        objective: { type: string }
+      required: [sessionId, response, responseType, evaluation, mastery, nextPrompt, nextPromptType, turnCount, misconception, canUseVoice, subject, topic, objective]
     RealtimeClientSecretInput:
       type: object
       properties:

@@ -87,6 +87,7 @@ export default function Study() {
             : []),
         ]);
         setMastery(data.mastery);
+        setSessionPrompt(data.objective);
 
         if (data.responseType === "complete") {
           // Auto complete after short delay

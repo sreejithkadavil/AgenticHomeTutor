@@ -209,7 +209,10 @@ export const SubmitTutorTurnResponse = zod.object({
   "nextPromptType": zod.enum(['explain', 'question', 'reflect']),
   "turnCount": zod.number().int(),
   "misconception": zod.string().nullable(),
-  "canUseVoice": zod.boolean()
+  "canUseVoice": zod.boolean(),
+  "subject": zod.string().describe('The subject of the objective this turn\'s nextPrompt is about — may change mid-session if the tutor advanced to a new concept.'),
+  "topic": zod.string(),
+  "objective": zod.string()
 })
 
 
@@ -272,7 +275,10 @@ export const RecordRealtimeTurnResponse = zod.object({
   "nextPromptType": zod.enum(['explain', 'question', 'reflect']),
   "turnCount": zod.number().int(),
   "misconception": zod.string().nullable(),
-  "canUseVoice": zod.boolean()
+  "canUseVoice": zod.boolean(),
+  "subject": zod.string().describe('The subject of the objective this turn\'s nextPrompt is about — may change mid-session if the tutor advanced to a new concept.'),
+  "topic": zod.string(),
+  "objective": zod.string()
 })
 
 

@@ -219,6 +219,10 @@ export interface TutorTurn {
   /** @nullable */
   misconception: string | null;
   canUseVoice: boolean;
+  /** The subject of the objective this turn's nextPrompt is about — may change mid-session if the tutor advanced to a new concept. */
+  subject: string;
+  topic: string;
+  objective: string;
 }
 
 export interface RealtimeClientSecretInput {

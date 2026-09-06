@@ -100,6 +100,8 @@ export const sessionsTable = pgTable("study_sessions", {
   turnCount: integer("turn_count").notNull().default(0),
   /** The most recent question/prompt the tutor asked, used as grading context for the next turn. */
   currentPrompt: text("current_prompt").notNull().default(""),
+  /** Objective ids already introduced in this session, so it can advance through several concepts without repeats. */
+  objectivesCovered: text("objectives_covered").array().notNull().default([]),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });

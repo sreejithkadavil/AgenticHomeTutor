@@ -224,6 +224,24 @@ function parseImportedObjectives(input: {
   });
 }
 
+const MASTERY_ADVANCE_THRESHOLD = 0.7;
+
+async function selectNextObjective(studentId: string, excludeObjectiveIds: string[]) {
+  const candidates = await db
+    .select({
+      objectiveId: objectivesTable.id,
+      subject: objectivesTable.subject,
+      topic: objectivesTable.topic,
+      objective: objectivesTable.objective,
+      mastery: masteryTable.mastery,
+    })
+    .from(masteryTable)
+    .innerJoin(objectivesTable, eq(masteryTable.objectiveId, objectivesTable.id))
+    .where(eq(masteryTable.studentId, studentId))
+    .orderBy(asc(masteryTable.mastery));
+  return candidates.find((candidate) => !excludeObjectiveIds.includes(candidate.objectiveId)) ?? null;
+}
+
 router.get("/dashboard", async (req, res): Promise<void> => {
   const user = await currentUser(req, res); if (!user) return;
   const [student] = await db
@@ -543,6 +561,7 @@ router.post(
         status: "active",
         turnCount: 0,
         currentPrompt: prompt,
+        objectivesCovered: [selected.objectiveId],
       })
       .returning();
 
@@ -632,10 +651,49 @@ router.post(
     );
     const turnCount = row.session.turnCount + 1;
 
+    let responseType: "encourage" | "hint" | "complete" = evaluation === "correct" ? "encourage" : "hint";
+    let responseText = feedback;
+    let nextPromptText = nextPrompt;
+    let nextPromptType: "explain" | "question" = "question";
+    let nextObjectiveId = row.session.objectiveId;
+    let objectivesCovered = row.session.objectivesCovered;
+    let currentSubject = row.objective.subject;
+    let currentTopic = row.objective.topic;
+    let currentObjectiveText = row.objective.objective;
+
+    if (evaluation === "correct" && nextMastery >= MASTERY_ADVANCE_THRESHOLD) {
+      const covered = objectivesCovered.includes(row.session.objectiveId)
+        ? objectivesCovered
+        : [...objectivesCovered, row.session.objectiveId];
+      const next = await selectNextObjective(row.session.studentId, covered);
+      if (!next) {
+        responseType = "complete";
+      } else {
+        try {
+          const taught = await explainObjective({
+            studentName: row.student.name,
+            subject: next.subject,
+            topic: next.topic,
+            objective: next.objective,
+          });
+          responseText = `${feedback} Let's move on to something new.`;
+          nextPromptText = `${taught.explanation}\n\n${taught.checkQuestion}`;
+          nextPromptType = "explain";
+          nextObjectiveId = next.objectiveId;
+          objectivesCovered = covered;
+          currentSubject = next.subject;
+          currentTopic = next.topic;
+          currentObjectiveText = next.objective;
+        } catch (error) {
+          req.log.warn({ err: error }, "Could not introduce the next objective; staying on the current one");
+        }
+      }
+    }
+
     await db.transaction(async (tx) => {
       await tx
         .update(sessionsTable)
-        .set({ turnCount, currentPrompt: nextPrompt })
+        .set({ turnCount, currentPrompt: nextPromptText, objectiveId: nextObjectiveId, objectivesCovered })
         .where(eq(sessionsTable.id, row.session.id));
       await tx
         .update(masteryTable)
@@ -660,15 +718,18 @@ router.post(
     res.json(
       SubmitTutorTurnResponse.parse({
         sessionId: row.session.id,
-        response: feedback,
-        responseType: evaluation === "correct" ? "encourage" : "hint",
+        response: responseText,
+        responseType,
         evaluation,
         mastery: nextMastery,
-        nextPrompt,
-        nextPromptType: "question",
+        nextPrompt: nextPromptText,
+        nextPromptType,
         turnCount,
         misconception,
         canUseVoice: false,
+        subject: currentSubject,
+        topic: currentTopic,
+        objective: currentObjectiveText,
       }),
     );
   },
@@ -716,11 +777,17 @@ router.post(
       .set({ status: "completed", completedAt: new Date() })
       .where(eq(sessionsTable.id, row.session.id));
 
+    const otherObjectivesCovered = row.session.objectivesCovered.filter(
+      (id) => id !== row.session.objectiveId,
+    ).length;
+
     res.json(
       CompleteStudySessionResponse.parse({
         sessionId: row.session.id,
         topic: row.objective.topic,
-        learned: row.objective.objective,
+        learned: otherObjectivesCovered > 0
+          ? `${row.objective.objective} (plus ${otherObjectivesCovered} other concept${otherObjectivesCovered === 1 ? "" : "s"} covered this session)`
+          : row.objective.objective,
         weakness:
           row.mastery.mastery < 0.7
             ? "The reasoning needs one more short retest."
@@ -817,7 +884,7 @@ router.post("/study-sessions/:sessionId/realtime-turns", async (req, res): Promi
     await tx.insert(attemptsTable).values({ id: randomUUID(), sessionId: row.session.id, answer, inputMode: "voice", evaluation, misconception, metadata: { assistantTranscript: body.data.assistantTranscript, usage: body.data.usage, masteryBefore: row.mastery.mastery, masteryAfter: mastery } });
     if (mastery < 0.7) await tx.insert(revisionTable).values({ id: randomUUID(), studentId: row.session.studentId, objectiveId: row.objective.id, dueLabel: "Tomorrow", daysUntil: 1, reason: "Realtime response showed this objective needs a short retest." });
   });
-  res.json(SubmitTutorTurnResponse.parse({ sessionId: row.session.id, response: body.data.assistantTranscript, responseType: evaluation === "correct" ? "retest" : "hint", evaluation, mastery, nextPrompt: "Explain one more example in your own words.", nextPromptType: "question", turnCount, misconception, canUseVoice: true }));
+  res.json(SubmitTutorTurnResponse.parse({ sessionId: row.session.id, response: body.data.assistantTranscript, responseType: evaluation === "correct" ? "encourage" : "hint", evaluation, mastery, nextPrompt: "Explain one more example in your own words.", nextPromptType: "question", turnCount, misconception, canUseVoice: true, subject: row.objective.subject, topic: row.objective.topic, objective: row.objective.objective }));
 });
 
 router.get("/curricula/class-6", async (req, res): Promise<void> => {
