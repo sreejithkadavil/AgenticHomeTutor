@@ -50,6 +50,7 @@ import {
 import {
   classifyTutorAnswer,
   explainObjective,
+  generateExerciseQuestion,
   gradeTutorAnswer,
   TutorGradingUnavailableError,
 } from "../lib/tutorGrading";
@@ -223,8 +224,6 @@ function parseImportedObjectives(input: {
     }];
   });
 }
-
-const MASTERY_ADVANCE_THRESHOLD = 0.7;
 
 async function selectNextObjective(studentId: string, excludeObjectiveIds: string[]) {
   const candidates = await db
@@ -562,6 +561,7 @@ router.post(
         turnCount: 0,
         currentPrompt: prompt,
         objectivesCovered: [selected.objectiveId],
+        exercisePending: false,
       })
       .returning();
 
@@ -654,14 +654,17 @@ router.post(
     let responseType: "encourage" | "hint" | "complete" = evaluation === "correct" ? "encourage" : "hint";
     let responseText = feedback;
     let nextPromptText = nextPrompt;
-    let nextPromptType: "explain" | "question" = "question";
+    let nextPromptType: "explain" | "question" | "reflect" = "question";
     let nextObjectiveId = row.session.objectiveId;
     let objectivesCovered = row.session.objectivesCovered;
+    let exercisePending = false;
     let currentSubject = row.objective.subject;
     let currentTopic = row.objective.topic;
     let currentObjectiveText = row.objective.objective;
 
-    if (evaluation === "correct" && nextMastery >= MASTERY_ADVANCE_THRESHOLD) {
+    if (evaluation === "correct" && row.session.exercisePending) {
+      // The student just passed an exam/exercise-style question on this
+      // objective — that's the bar for real mastery, so advance.
       const covered = objectivesCovered.includes(row.session.objectiveId)
         ? objectivesCovered
         : [...objectivesCovered, row.session.objectiveId];
@@ -688,12 +691,31 @@ router.post(
           req.log.warn({ err: error }, "Could not introduce the next objective; staying on the current one");
         }
       }
+    } else if (evaluation === "correct" && !row.session.exercisePending) {
+      // The student showed basic comprehension — raise the bar to an
+      // exercise/exam-style question before treating the objective as mastered.
+      try {
+        const exercise = await generateExerciseQuestion({
+          studentName: row.student.name,
+          subject: row.objective.subject,
+          topic: row.objective.topic,
+          objective: row.objective.objective,
+        });
+        nextPromptText = exercise.question;
+        nextPromptType = "reflect";
+        exercisePending = true;
+      } catch (error) {
+        req.log.warn({ err: error }, "Could not generate an exercise question; continuing with the grader's own next prompt");
+      }
     }
+    // Otherwise (almost/incorrect): fall through to the grader's own
+    // remediation feedback/nextPrompt, and exercisePending resets to false
+    // so a later correct answer earns a fresh exercise question.
 
     await db.transaction(async (tx) => {
       await tx
         .update(sessionsTable)
-        .set({ turnCount, currentPrompt: nextPromptText, objectiveId: nextObjectiveId, objectivesCovered })
+        .set({ turnCount, currentPrompt: nextPromptText, objectiveId: nextObjectiveId, objectivesCovered, exercisePending })
         .where(eq(sessionsTable.id, row.session.id));
       await tx
         .update(masteryTable)

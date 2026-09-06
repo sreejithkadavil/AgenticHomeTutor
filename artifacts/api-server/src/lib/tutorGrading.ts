@@ -177,6 +177,43 @@ export async function explainObjective(input: ExplainInput): Promise<ExplainResu
   );
 }
 
+interface ExerciseInput extends ObjectiveContext {
+  studentName: string;
+}
+
+export interface ExerciseResult {
+  question: string;
+}
+
+/**
+ * Generates one exercise/exam-style question for an objective the student has
+ * just shown basic comprehension of — the kind of question they'd actually
+ * face in schoolwork or a test, not another "explain it back to me" prompt.
+ * Passing this is what the session treats as evidence of real mastery.
+ */
+export async function generateExerciseQuestion(input: ExerciseInput): Promise<ExerciseResult> {
+  const systemPrompt = [
+    `You are a Grade 6 ${input.subject} teacher writing one practice question for ${input.studentName}.`,
+    `Topic: ${input.topic}. Target learning objective: ${input.objective}.`,
+    "The student has just shown they understand the basic idea. Write ONE question in the style of a textbook exercise or short exam question that requires applying the concept (not just restating it) — e.g. solve a problem, analyze an example, or make a judgment using the concept.",
+    "Keep it self-contained (no reference to 'the passage above' or similar) and answerable in a few sentences.",
+  ].join("\n");
+
+  return callGradingModel<ExerciseResult>(
+    systemPrompt,
+    "Write the practice question now.",
+    "tutor_exercise_question",
+    {
+      type: "object",
+      properties: {
+        question: { type: "string" },
+      },
+      required: ["question"],
+      additionalProperties: false,
+    },
+  );
+}
+
 /**
  * Full grading pass for a text turn: classifies the answer and authors the
  * tutor's next message (feedback plus the next question), grounded in what the

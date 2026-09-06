@@ -1,4 +1,5 @@
 import {
+  boolean,
   doublePrecision,
   integer,
   jsonb,
@@ -102,6 +103,8 @@ export const sessionsTable = pgTable("study_sessions", {
   currentPrompt: text("current_prompt").notNull().default(""),
   /** Objective ids already introduced in this session, so it can advance through several concepts without repeats. */
   objectivesCovered: text("objectives_covered").array().notNull().default([]),
+  /** True when currentPrompt is an exam/exercise-style question — passing it is what advances to the next objective. */
+  exercisePending: boolean("exercise_pending").notNull().default(false),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });
