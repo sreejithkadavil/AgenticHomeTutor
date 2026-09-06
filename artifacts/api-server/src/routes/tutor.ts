@@ -49,6 +49,7 @@ import {
 } from "../data/class6Curriculum";
 import {
   classifyTutorAnswer,
+  explainObjective,
   gradeTutorAnswer,
   TutorGradingUnavailableError,
 } from "../lib/tutorGrading";
@@ -486,7 +487,8 @@ router.post(
       res.status(400).json({ error: "Invalid study session request" });
       return;
     }
-    if (!await accessibleStudent(user, params.data.studentId)) { res.status(404).json({ error: "Student not found" }); return; }
+    const student = await accessibleStudent(user, params.data.studentId);
+    if (!student) { res.status(404).json({ error: "Student not found" }); return; }
 
     const candidates = await db
       .select({
@@ -517,7 +519,21 @@ router.post(
       return;
     }
 
-    const prompt = `Let's work on ${selected.objective.toLowerCase()}. Explain the idea in your own words and give one example, even if you are not completely sure.`;
+    let prompt = `Let's work on ${selected.objective.toLowerCase()}. Explain the idea in your own words and give one example, even if you are not completely sure.`;
+    let promptType: "explain" | "question" = "question";
+    try {
+      const taught = await explainObjective({
+        studentName: student.name,
+        subject: selected.subject,
+        topic: selected.topic,
+        objective: selected.objective,
+      });
+      prompt = `${taught.explanation}\n\n${taught.checkQuestion}`;
+      promptType = "explain";
+    } catch (error) {
+      req.log.warn({ err: error }, "Falling back to a templated session opener; concept explanation is unavailable");
+    }
+
     const [session] = await db
       .insert(sessionsTable)
       .values({
@@ -538,7 +554,7 @@ router.post(
         topic: selected.topic,
         objective: selected.objective,
         prompt,
-        promptType: "question",
+        promptType,
         turnCount: 0,
         estimatedMinutes: 12,
         voiceReady: false,
@@ -645,7 +661,7 @@ router.post(
       SubmitTutorTurnResponse.parse({
         sessionId: row.session.id,
         response: feedback,
-        responseType: evaluation === "correct" ? "retest" : "hint",
+        responseType: evaluation === "correct" ? "encourage" : "hint",
         evaluation,
         mastery: nextMastery,
         nextPrompt,

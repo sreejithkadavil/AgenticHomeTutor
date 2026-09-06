@@ -137,6 +137,46 @@ export async function classifyTutorAnswer(input: ClassifyInput): Promise<Classif
   return result;
 }
 
+interface ExplainInput extends ObjectiveContext {
+  studentName: string;
+}
+
+export interface ExplainResult {
+  explanation: string;
+  checkQuestion: string;
+}
+
+/**
+ * Generates the tutor's opening teaching turn for a new objective: a short,
+ * age-appropriate explanation with a worked example, followed by one
+ * comprehension question — so a session starts by teaching the concept
+ * instead of asking the student to explain it sight-unseen.
+ */
+export async function explainObjective(input: ExplainInput): Promise<ExplainResult> {
+  const systemPrompt = [
+    `You are a warm, clear tutor introducing a new topic to ${input.studentName}, a Grade 6 student.`,
+    `Subject: ${input.subject}. Topic: ${input.topic}.`,
+    `Target learning objective: ${input.objective}.`,
+    "Write 'explanation' as a short (3-5 sentence) teaching explanation of the concept in age-appropriate language, including one concrete worked example.",
+    "Write 'checkQuestion' as one comprehension question that checks whether the student grasped what you just explained — not a restatement of the objective, and not something answerable without having read the explanation.",
+  ].join("\n");
+
+  return callGradingModel<ExplainResult>(
+    systemPrompt,
+    "Introduce this concept to the student now.",
+    "tutor_objective_explanation",
+    {
+      type: "object",
+      properties: {
+        explanation: { type: "string" },
+        checkQuestion: { type: "string" },
+      },
+      required: ["explanation", "checkQuestion"],
+      additionalProperties: false,
+    },
+  );
+}
+
 /**
  * Full grading pass for a text turn: classifies the answer and authors the
  * tutor's next message (feedback plus the next question), grounded in what the
@@ -148,6 +188,7 @@ export async function gradeTutorAnswer(input: GradeInput): Promise<GradeResult> 
     `Topic: ${input.topic}. Target learning objective: ${input.objective}.`,
     `You just asked: "${input.priorPrompt}"`,
     SHARED_RUBRIC,
+    "misconception should be null when evaluation is 'correct', otherwise a one-sentence description of the gap.",
     "Write 'feedback' as what you would say next to the student directly (2-3 short sentences, age-appropriate, specific to their actual answer — never a generic template).",
     "If evaluation is 'correct', 'nextPrompt' should be a new question that applies or extends the concept in a slightly different way (like a textbook exercise or exam question).",
     "If evaluation is 'almost' or 'incorrect', 'feedback' should re-teach the specific piece the student is missing with a short concrete example, and 'nextPrompt' should be a smaller, more scaffolded question that isolates that gap.",

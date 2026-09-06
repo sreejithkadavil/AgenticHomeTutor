@@ -225,7 +225,7 @@ export default function Study() {
                 {msg.role === 'tutor' && msg.type === 'explain' && (
                   <div className="mt-3 flex items-center gap-2 text-xs font-sans font-medium text-accent bg-accent/10 px-2 py-1.5 rounded-md inline-flex">
                     <AlertCircle className="w-3.5 h-3.5" />
-                    Concept Check
+                    New Concept
                   </div>
                 )}
                 {msg.role === 'tutor' && msg.type === 'encourage' && (
