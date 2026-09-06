@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { 
   useGetDashboard, 
   useStartStudySession,
@@ -8,11 +7,9 @@ import { useActiveStudent } from "@/hooks/use-active-student";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Brain, Flame, Target, Clock, Activity, ArrowRight, Lightbulb } from "lucide-react";
 import { useLocation } from "wouter";
-import { format, formatDistanceToNow } from "date-fns";
 
 export default function Dashboard() {
   const { student, isLoading: studentLoading } = useActiveStudent();
@@ -106,7 +103,10 @@ export default function Dashboard() {
                 <p className="text-primary-foreground/80 text-sm font-medium">Overall Mastery</p>
                 <div className="flex items-baseline gap-2">
                   <span className="text-4xl font-bold tracking-tighter">{Math.round((dashboard?.overallMastery ?? 0) * 100)}%</span>
-                  <span className="text-sm font-medium text-accent">+{Math.round((dashboard?.masteryDelta ?? 0) * 100)}%</span>
+                  <span className="text-sm font-medium text-accent">
+                    {(dashboard?.masteryDelta ?? 0) > 0 ? "+" : ""}
+                    {Math.round((dashboard?.masteryDelta ?? 0) * 100)}%
+                  </span>
                 </div>
               </div>
               <div className="p-2 bg-primary-foreground/10 rounded-lg">
@@ -225,7 +225,7 @@ export default function Dashboard() {
               ))}
               {(!dashboard?.recentActivity || dashboard.recentActivity.length === 0) && (
                  <div className="text-center text-sm text-muted-foreground py-8">
-                   No recent activity
+                    No study activity yet. Completed sessions and new materials will appear here.
                  </div>
               )}
             </div>
