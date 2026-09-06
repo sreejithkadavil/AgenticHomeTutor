@@ -356,3 +356,16 @@ export interface CurriculumUploadResult {
   importedObjectives: CurriculumObjective[];
 }
 
+export interface ExtractMaterialTextInput {
+  /** @minLength 1 */
+  fileName: string;
+  /** @minLength 1 */
+  mimeType: string;
+  /** @minLength 1 */
+  contentBase64: string;
+}
+
+export interface ExtractMaterialTextResult {
+  text: string;
+}
+

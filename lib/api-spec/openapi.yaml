@@ -298,6 +298,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurriculumUploadResult"
+  /curricula/extract-text:
+    post:
+      operationId: extractCurriculumMaterialText
+      tags: [curriculum]
+      summary: Extract plain text from a parent-uploaded PDF or photo of school notes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExtractMaterialTextInput"
+      responses:
+        "200":
+          description: Extracted text
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractMaterialTextResult"
 components:
   parameters:
     StudentId:
@@ -615,4 +633,16 @@ components:
           items:
             $ref: "#/components/schemas/CurriculumObjective"
       required: [upload, importedObjectives]
+    ExtractMaterialTextInput:
+      type: object
+      properties:
+        fileName: { type: string, minLength: 1 }
+        mimeType: { type: string, minLength: 1 }
+        contentBase64: { type: string, minLength: 1 }
+      required: [fileName, mimeType, contentBase64]
+    ExtractMaterialTextResult:
+      type: object
+      properties:
+        text: { type: string }
+      required: [text]
 

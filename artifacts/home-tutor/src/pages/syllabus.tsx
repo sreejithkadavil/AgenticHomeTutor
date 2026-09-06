@@ -1,10 +1,11 @@
 import { useState, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { 
-  useGetClass6Curriculum, 
-  useListCurriculumUploads, 
+import {
+  useGetClass6Curriculum,
+  useListCurriculumUploads,
   useCreateCurriculumUpload,
-  getListCurriculumUploadsQueryKey 
+  useExtractCurriculumMaterialText,
+  getListCurriculumUploadsQueryKey
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -14,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Info, UploadCloud, FileText, CheckCircle2, AlertCircle, Library, BookOpen } from "lucide-react";
+import { Search, Info, UploadCloud, FileText, CheckCircle2, AlertCircle, Library, BookOpen, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 
@@ -268,9 +269,22 @@ function CurriculumBrowser() {
   );
 }
 
+const PLAIN_TEXT_EXTENSIONS = [".txt", ".csv", ".json"];
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1] ?? "");
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
 function SyllabusImport() {
   const { data: uploads, isLoading: uploadsLoading } = useListCurriculumUploads();
   const createUpload = useCreateCurriculumUpload();
+  const extractText = useExtractCurriculumMaterialText();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -287,26 +301,49 @@ function SyllabusImport() {
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = "";
     if (!file) return;
 
-    try {
-      const text = await file.text();
-      setFormData(prev => ({
-        ...prev,
-        fileName: file.name,
-        contentText: text
-      }));
-    } catch (err) {
+    const isPlainText = PLAIN_TEXT_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext));
+    if (isPlainText) {
+      try {
+        const text = await file.text();
+        setFormData(prev => ({ ...prev, fileName: file.name, contentText: text }));
+      } catch (err) {
+        toast({
+          title: "Error reading file",
+          description: "Please ensure you upload a readable text file.",
+          variant: "destructive"
+        });
+      }
+      return;
+    }
+
+    if (file.size > MAX_UPLOAD_BYTES) {
       toast({
-        title: "Error reading file",
-        description: "Please ensure you upload a readable text file.",
+        title: "File too large",
+        description: "Please upload a PDF or photo under 8MB.",
         variant: "destructive"
       });
+      return;
     }
-    
-    // Reset file input so same file can be selected again if needed
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+
+    try {
+      const contentBase64 = await readFileAsBase64(file);
+      const result = await extractText.mutateAsync({
+        data: { fileName: file.name, mimeType: file.type || "application/octet-stream", contentBase64 },
+      });
+      setFormData(prev => ({ ...prev, fileName: file.name, contentText: result.text }));
+      toast({
+        title: "Text extracted",
+        description: `Review the extracted content below before importing "${file.name}".`,
+      });
+    } catch (err) {
+      toast({
+        title: "Could not read this file",
+        description: err instanceof Error ? err.message : "Please try a different file or paste the content directly.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -358,7 +395,7 @@ function SyllabusImport() {
           <div className="bg-primary/5 p-6 border-b border-border">
             <CardTitle className="text-xl">Import Custom Syllabus</CardTitle>
             <CardDescription className="text-base mt-2">
-              Add curriculum objectives from your child's school. You can type, paste, or upload a document (.txt, .csv, .json).
+              Add curriculum objectives from your child's school. You can type, paste, or upload a document — .txt, .csv, .json, a PDF, or a photo of the notes.
             </CardDescription>
           </div>
           <form onSubmit={handleSubmit}>
@@ -420,22 +457,28 @@ function SyllabusImport() {
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-semibold">Syllabus Content <span className="text-destructive">*</span></Label>
                   <div className="flex items-center gap-2">
-                    <input 
-                      type="file" 
-                      accept=".txt,.csv,.json"
-                      className="hidden" 
+                    <input
+                      type="file"
+                      accept=".txt,.csv,.json,.pdf,.png,.jpg,.jpeg"
+                      className="hidden"
                       ref={fileInputRef}
                       onChange={handleFileChange}
+                      disabled={extractText.isPending}
                     />
-                    <Button 
-                      type="button" 
-                      variant="outline" 
+                    <Button
+                      type="button"
+                      variant="outline"
                       size="sm"
                       className="h-8 text-xs font-medium bg-muted/30"
                       onClick={() => fileInputRef.current?.click()}
+                      disabled={extractText.isPending}
                     >
-                      <UploadCloud className="w-3.5 h-3.5 mr-1.5" />
-                      Upload File
+                      {extractText.isPending ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      ) : (
+                        <UploadCloud className="w-3.5 h-3.5 mr-1.5" />
+                      )}
+                      {extractText.isPending ? "Reading file…" : "Upload File"}
                     </Button>
                   </div>
                 </div>

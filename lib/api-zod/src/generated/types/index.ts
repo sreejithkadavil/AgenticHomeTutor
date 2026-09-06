@@ -17,6 +17,8 @@ export * from './curriculumUploadResult';
 export * from './curriculumUploadStatus';
 export * from './dashboard';
 export * from './error';
+export * from './extractMaterialTextInput';
+export * from './extractMaterialTextResult';
 export * from './gmailStatus';
 export * from './gmailStatusState';
 export * from './gmailSyncInput';

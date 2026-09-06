@@ -26,6 +26,8 @@ import type {
   CurriculumUploadResult,
   Dashboard,
   Error,
+  ExtractMaterialTextInput,
+  ExtractMaterialTextResult,
   GmailStatus,
   GmailSyncInput,
   HealthStatus,
@@ -1334,5 +1336,76 @@ export const useCreateCurriculumUpload = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateCurriculumUploadMutationOptions(options));
+    }
+
+export const getExtractCurriculumMaterialTextUrl = () => {
+
+
+
+
+  return `/api/curricula/extract-text`
+}
+
+/**
+ * @summary Extract plain text from a parent-uploaded PDF or photo of school notes
+ */
+export const extractCurriculumMaterialText = async (extractMaterialTextInput: ExtractMaterialTextInput, options?: Parameters<typeof customFetch>[1]): Promise<ExtractMaterialTextResult> => {
+
+  return customFetch<ExtractMaterialTextResult>(getExtractCurriculumMaterialTextUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(extractMaterialTextInput)
+  }
+);}
+
+
+
+
+
+export const getExtractCurriculumMaterialTextMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof extractCurriculumMaterialText>>, TError,{data: BodyType<ExtractMaterialTextInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof extractCurriculumMaterialText>>, TError,{data: BodyType<ExtractMaterialTextInput>}, TContext> => {
+
+const mutationKey = ['extractCurriculumMaterialText'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof extractCurriculumMaterialText>>, {data: BodyType<ExtractMaterialTextInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  extractCurriculumMaterialText(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ExtractCurriculumMaterialTextMutationResult = NonNullable<Awaited<ReturnType<typeof extractCurriculumMaterialText>>>
+    export type ExtractCurriculumMaterialTextMutationBody = BodyType<ExtractMaterialTextInput>
+    export type ExtractCurriculumMaterialTextMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Extract plain text from a parent-uploaded PDF or photo of school notes
+ */
+export const useExtractCurriculumMaterialText = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof extractCurriculumMaterialText>>, TError,{data: BodyType<ExtractMaterialTextInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof extractCurriculumMaterialText>>,
+        TError,
+        {data: BodyType<ExtractMaterialTextInput>},
+        TContext
+      > => {
+      return useMutation(getExtractCurriculumMaterialTextMutationOptions(options));
     }
 

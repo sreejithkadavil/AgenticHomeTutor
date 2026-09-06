@@ -39,6 +39,8 @@ import {
   SyncGmailBody,
   CreateCurriculumUploadBody,
   CreateCurriculumUploadResponse,
+  ExtractCurriculumMaterialTextBody,
+  ExtractCurriculumMaterialTextResponse,
   GetClass6CurriculumResponse,
   ListCurriculumUploadsResponse,
 } from "@workspace/api-zod";
@@ -54,6 +56,7 @@ import {
   gradeTutorAnswer,
   TutorGradingUnavailableError,
 } from "../lib/tutorGrading";
+import { extractMaterialText, MaterialExtractionError } from "../lib/materialExtraction";
 
 const router: IRouter = Router();
 let curriculumSeedPromise: Promise<void> | null = null;
@@ -164,6 +167,11 @@ function asUpload(upload: typeof curriculumUploadsTable.$inferSelect) {
     objectiveCount: upload.objectiveCount,
     uploadedAt: upload.uploadedAt.toISOString(),
   };
+}
+
+function inferMaterialKind(fileName?: string | null): string {
+  const extension = fileName?.split(".").pop()?.toUpperCase();
+  return extension && extension.length <= 5 ? extension : "Text";
 }
 
 function parseImportedObjectives(input: {
@@ -925,6 +933,27 @@ router.get("/curricula/uploads", async (req, res): Promise<void> => {
   res.json(ListCurriculumUploadsResponse.parse(rows.map(asUpload).reverse()));
 });
 
+router.post("/curricula/extract-text", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
+  if (user.role !== "parent") { res.status(403).json({ error: "Only parents can extract material text" }); return; }
+  const parsed = ExtractCurriculumMaterialTextBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  try {
+    const text = await extractMaterialText(parsed.data);
+    res.json(ExtractCurriculumMaterialTextResponse.parse({ text }));
+  } catch (error) {
+    if (error instanceof MaterialExtractionError) {
+      res.status(422).json({ error: error.message });
+      return;
+    }
+    req.log.error({ err: error }, "Material text extraction failed");
+    res.status(502).json({ error: "Unable to read this file right now. Please try again." });
+  }
+});
+
 router.post("/curricula/uploads", async (req, res): Promise<void> => {
   const user = await currentUser(req, res); if (!user) return;
   if (user.role !== "parent") { res.status(403).json({ error: "Only parents can import curriculum" }); return; }
@@ -982,6 +1011,28 @@ router.post("/curricula/uploads", async (req, res): Promise<void> => {
         );
       if (masteryRows.length) await tx.insert(masteryTable).values(masteryRows);
     }
+
+    const householdStudents = await tx
+      .select()
+      .from(studentsTable)
+      .where(eq(studentsTable.ownerId, user.id));
+    if (householdStudents.length) {
+      await tx.insert(materialsTable).values(
+        householdStudents.map((student) => ({
+          id: randomUUID(),
+          studentId: student.id,
+          title: parsed.data.title,
+          kind: inferMaterialKind(parsed.data.fileName),
+          source: "Parent upload",
+          receivedAt: new Date().toISOString(),
+          status: importedObjectives.length ? "mapped" : "processing",
+          subjects: [parsed.data.subject],
+          preview: parsed.data.contentText.slice(0, 240),
+          sourceKey: `${uploadId}:${student.id}`,
+        })),
+      );
+    }
+
     return [created];
   });
 

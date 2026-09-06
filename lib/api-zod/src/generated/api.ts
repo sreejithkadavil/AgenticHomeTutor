@@ -410,3 +410,22 @@ export const CreateCurriculumUploadResponse = zod.object({
 })
 
 
+/**
+ * @summary Extract plain text from a parent-uploaded PDF or photo of school notes
+ */
+
+
+
+
+
+export const ExtractCurriculumMaterialTextBody = zod.object({
+  "fileName": zod.string().min(1),
+  "mimeType": zod.string().min(1),
+  "contentBase64": zod.string().min(1)
+})
+
+export const ExtractCurriculumMaterialTextResponse = zod.object({
+  "text": zod.string()
+})
+
+

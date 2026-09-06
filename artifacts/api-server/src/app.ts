@@ -34,6 +34,10 @@ app.use(
 );
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use(cors({ credentials: true, origin: true }));
+// Base64-encoded file uploads (PDF/photo material extraction) need a larger
+// body limit than the rest of the API; apply it only to that route, ahead of
+// the default-sized parser below.
+app.post("/api/curricula/extract-text", express.json({ limit: "12mb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(
