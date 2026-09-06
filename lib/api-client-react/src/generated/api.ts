@@ -20,6 +20,10 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  CurriculumOverview,
+  CurriculumUpload,
+  CurriculumUploadInput,
+  CurriculumUploadResult,
   Dashboard,
   Error,
   GmailStatus,
@@ -959,5 +963,230 @@ export const useSyncGmail = <TError = ErrorType<Error>,
         TContext
       > => {
       return useMutation(getSyncGmailMutationOptions(options));
+    }
+
+export const getGetClass6CurriculumUrl = () => {
+
+
+
+
+  return `/api/curricula/class-6`
+}
+
+/**
+ * @summary Get the seeded Phoenix Greens Class 6 Cambridge curriculum
+ */
+export const getClass6Curriculum = async ( options?: Parameters<typeof customFetch>[1]): Promise<CurriculumOverview> => {
+
+  return customFetch<CurriculumOverview>(getGetClass6CurriculumUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetClass6CurriculumQueryKey = () => {
+    return [
+    `/api/curricula/class-6`
+    ] as const;
+    }
+
+
+export const getGetClass6CurriculumQueryOptions = <TData = Awaited<ReturnType<typeof getClass6Curriculum>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClass6Curriculum>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetClass6CurriculumQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getClass6Curriculum>>> = ({ signal }) => getClass6Curriculum({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getClass6Curriculum>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetClass6CurriculumQueryResult = NonNullable<Awaited<ReturnType<typeof getClass6Curriculum>>>
+export type GetClass6CurriculumQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the seeded Phoenix Greens Class 6 Cambridge curriculum
+ */
+
+export function useGetClass6Curriculum<TData = Awaited<ReturnType<typeof getClass6Curriculum>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClass6Curriculum>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetClass6CurriculumQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListCurriculumUploadsUrl = () => {
+
+
+
+
+  return `/api/curricula/uploads`
+}
+
+/**
+ * @summary List syllabus sources uploaded by the parent
+ */
+export const listCurriculumUploads = async ( options?: Parameters<typeof customFetch>[1]): Promise<CurriculumUpload[]> => {
+
+  return customFetch<CurriculumUpload[]>(getListCurriculumUploadsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCurriculumUploadsQueryKey = () => {
+    return [
+    `/api/curricula/uploads`
+    ] as const;
+    }
+
+
+export const getListCurriculumUploadsQueryOptions = <TData = Awaited<ReturnType<typeof listCurriculumUploads>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCurriculumUploads>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCurriculumUploadsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCurriculumUploads>>> = ({ signal }) => listCurriculumUploads({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCurriculumUploads>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCurriculumUploadsQueryResult = NonNullable<Awaited<ReturnType<typeof listCurriculumUploads>>>
+export type ListCurriculumUploadsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List syllabus sources uploaded by the parent
+ */
+
+export function useListCurriculumUploads<TData = Awaited<ReturnType<typeof listCurriculumUploads>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCurriculumUploads>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCurriculumUploadsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateCurriculumUploadUrl = () => {
+
+
+
+
+  return `/api/curricula/uploads`
+}
+
+/**
+ * @summary Import a parent-provided syllabus source
+ */
+export const createCurriculumUpload = async (curriculumUploadInput: CurriculumUploadInput, options?: Parameters<typeof customFetch>[1]): Promise<CurriculumUploadResult> => {
+
+  return customFetch<CurriculumUploadResult>(getCreateCurriculumUploadUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(curriculumUploadInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCurriculumUploadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCurriculumUpload>>, TError,{data: BodyType<CurriculumUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCurriculumUpload>>, TError,{data: BodyType<CurriculumUploadInput>}, TContext> => {
+
+const mutationKey = ['createCurriculumUpload'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCurriculumUpload>>, {data: BodyType<CurriculumUploadInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCurriculumUpload(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCurriculumUploadMutationResult = NonNullable<Awaited<ReturnType<typeof createCurriculumUpload>>>
+    export type CreateCurriculumUploadMutationBody = BodyType<CurriculumUploadInput>
+    export type CreateCurriculumUploadMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Import a parent-provided syllabus source
+ */
+export const useCreateCurriculumUpload = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCurriculumUpload>>, TError,{data: BodyType<CurriculumUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCurriculumUpload>>,
+        TError,
+        {data: BodyType<CurriculumUploadInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCurriculumUploadMutationOptions(options));
     }
 

@@ -8,6 +8,13 @@
 
 export * from './activity';
 export * from './activityType';
+export * from './curriculumObjective';
+export * from './curriculumOverview';
+export * from './curriculumSubject';
+export * from './curriculumUpload';
+export * from './curriculumUploadInput';
+export * from './curriculumUploadResult';
+export * from './curriculumUploadStatus';
 export * from './dashboard';
 export * from './error';
 export * from './gmailStatus';

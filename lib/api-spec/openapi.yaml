@@ -20,6 +20,8 @@ tags:
     description: School material operations
   - name: integrations
     description: External source connection operations
+  - name: curriculum
+    description: Curriculum browsing and parent-managed syllabus sources
 paths:
   /healthz:
     get:
@@ -215,6 +217,49 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /curricula/class-6:
+    get:
+      operationId: getClass6Curriculum
+      tags: [curriculum]
+      summary: Get the seeded Phoenix Greens Class 6 Cambridge curriculum
+      responses:
+        "200":
+          description: Curriculum overview and learning objectives
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurriculumOverview"
+  /curricula/uploads:
+    get:
+      operationId: listCurriculumUploads
+      tags: [curriculum]
+      summary: List syllabus sources uploaded by the parent
+      responses:
+        "200":
+          description: Uploaded syllabus sources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CurriculumUpload"
+    post:
+      operationId: createCurriculumUpload
+      tags: [curriculum]
+      summary: Import a parent-provided syllabus source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CurriculumUploadInput"
+      responses:
+        "201":
+          description: Imported syllabus source
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurriculumUploadResult"
 components:
   parameters:
     StudentId:
@@ -428,4 +473,82 @@ components:
           items: { type: string }
           minItems: 1
       required: [labels]
+    CurriculumObjective:
+      type: object
+      properties:
+        id: { type: string }
+        subject: { type: string }
+        strand: { type: string }
+        topic: { type: string }
+        objective: { type: string }
+        term: { type: string }
+        source: { type: string }
+        sequence: { type: integer }
+      required: [id, subject, strand, topic, objective, term, source, sequence]
+    CurriculumSubject:
+      type: object
+      properties:
+        name: { type: string }
+        objectiveCount: { type: integer }
+        color: { type: string }
+        strands:
+          type: array
+          items: { type: string }
+      required: [name, objectiveCount, color, strands]
+    CurriculumOverview:
+      type: object
+      properties:
+        name: { type: string }
+        school: { type: string }
+        grade: { type: string }
+        pathway: { type: string }
+        stageNote: { type: string }
+        academicYear: { type: string }
+        sourceNote: { type: string }
+        subjects:
+          type: array
+          items:
+            $ref: "#/components/schemas/CurriculumSubject"
+        objectives:
+          type: array
+          items:
+            $ref: "#/components/schemas/CurriculumObjective"
+      required: [name, school, grade, pathway, stageNote, academicYear, sourceNote, subjects, objectives]
+    CurriculumUpload:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        school: { type: string }
+        grade: { type: string }
+        subject: { type: string }
+        term: { type: string }
+        fileName: { type: ["string", "null"] }
+        status:
+          type: string
+          enum: [imported, needs_review]
+        objectiveCount: { type: integer }
+        uploadedAt: { type: string }
+      required: [id, title, school, grade, subject, term, fileName, status, objectiveCount, uploadedAt]
+    CurriculumUploadInput:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        school: { type: string, minLength: 1 }
+        grade: { type: string, minLength: 1 }
+        subject: { type: string, minLength: 1 }
+        term: { type: string, minLength: 1 }
+        fileName: { type: ["string", "null"] }
+        contentText: { type: string, minLength: 1 }
+      required: [title, school, grade, subject, term, contentText]
+    CurriculumUploadResult:
+      type: object
+      properties:
+        upload:
+          $ref: "#/components/schemas/CurriculumUpload"
+        importedObjectives:
+          type: array
+          items:
+            $ref: "#/components/schemas/CurriculumObjective"
+      required: [upload, importedObjectives]
 

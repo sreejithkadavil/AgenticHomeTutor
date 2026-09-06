@@ -257,3 +257,77 @@ export interface GmailSyncInput {
   labels: string[];
 }
 
+export interface CurriculumObjective {
+  id: string;
+  subject: string;
+  strand: string;
+  topic: string;
+  objective: string;
+  term: string;
+  source: string;
+  sequence: number;
+}
+
+export interface CurriculumSubject {
+  name: string;
+  objectiveCount: number;
+  color: string;
+  strands: string[];
+}
+
+export interface CurriculumOverview {
+  name: string;
+  school: string;
+  grade: string;
+  pathway: string;
+  stageNote: string;
+  academicYear: string;
+  sourceNote: string;
+  subjects: CurriculumSubject[];
+  objectives: CurriculumObjective[];
+}
+
+export type CurriculumUploadStatus = typeof CurriculumUploadStatus[keyof typeof CurriculumUploadStatus];
+
+
+export const CurriculumUploadStatus = {
+  imported: 'imported',
+  needs_review: 'needs_review',
+} as const;
+
+export interface CurriculumUpload {
+  id: string;
+  title: string;
+  school: string;
+  grade: string;
+  subject: string;
+  term: string;
+  /** @nullable */
+  fileName: string | null;
+  status: CurriculumUploadStatus;
+  objectiveCount: number;
+  uploadedAt: string;
+}
+
+export interface CurriculumUploadInput {
+  /** @minLength 1 */
+  title: string;
+  /** @minLength 1 */
+  school: string;
+  /** @minLength 1 */
+  grade: string;
+  /** @minLength 1 */
+  subject: string;
+  /** @minLength 1 */
+  term: string;
+  /** @nullable */
+  fileName?: string | null;
+  /** @minLength 1 */
+  contentText: string;
+}
+
+export interface CurriculumUploadResult {
+  upload: CurriculumUpload;
+  importedObjectives: CurriculumObjective[];
+}
+

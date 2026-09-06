@@ -264,3 +264,98 @@ export const SyncGmailResponse = zod.object({
 })
 
 
+/**
+ * @summary Get the seeded Phoenix Greens Class 6 Cambridge curriculum
+ */
+export const GetClass6CurriculumResponse = zod.object({
+  "name": zod.string(),
+  "school": zod.string(),
+  "grade": zod.string(),
+  "pathway": zod.string(),
+  "stageNote": zod.string(),
+  "academicYear": zod.string(),
+  "sourceNote": zod.string(),
+  "subjects": zod.array(zod.object({
+  "name": zod.string(),
+  "objectiveCount": zod.number().int(),
+  "color": zod.string(),
+  "strands": zod.array(zod.string())
+})),
+  "objectives": zod.array(zod.object({
+  "id": zod.string(),
+  "subject": zod.string(),
+  "strand": zod.string(),
+  "topic": zod.string(),
+  "objective": zod.string(),
+  "term": zod.string(),
+  "source": zod.string(),
+  "sequence": zod.number().int()
+}))
+})
+
+
+/**
+ * @summary List syllabus sources uploaded by the parent
+ */
+export const ListCurriculumUploadsResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "school": zod.string(),
+  "grade": zod.string(),
+  "subject": zod.string(),
+  "term": zod.string(),
+  "fileName": zod.string().nullable(),
+  "status": zod.enum(['imported', 'needs_review']),
+  "objectiveCount": zod.number().int(),
+  "uploadedAt": zod.string()
+})
+export const ListCurriculumUploadsResponse = zod.array(ListCurriculumUploadsResponseItem)
+
+
+/**
+ * @summary Import a parent-provided syllabus source
+ */
+
+
+
+
+
+
+
+
+export const CreateCurriculumUploadBody = zod.object({
+  "title": zod.string().min(1),
+  "school": zod.string().min(1),
+  "grade": zod.string().min(1),
+  "subject": zod.string().min(1),
+  "term": zod.string().min(1),
+  "fileName": zod.string().nullish(),
+  "contentText": zod.string().min(1)
+})
+
+export const CreateCurriculumUploadResponse = zod.object({
+  "upload": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "school": zod.string(),
+  "grade": zod.string(),
+  "subject": zod.string(),
+  "term": zod.string(),
+  "fileName": zod.string().nullable(),
+  "status": zod.enum(['imported', 'needs_review']),
+  "objectiveCount": zod.number().int(),
+  "uploadedAt": zod.string()
+}),
+  "importedObjectives": zod.array(zod.object({
+  "id": zod.string(),
+  "subject": zod.string(),
+  "strand": zod.string(),
+  "topic": zod.string(),
+  "objective": zod.string(),
+  "term": zod.string(),
+  "source": zod.string(),
+  "sequence": zod.number().int()
+}))
+})
+
+

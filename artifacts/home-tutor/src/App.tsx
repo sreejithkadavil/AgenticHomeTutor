@@ -11,33 +11,33 @@ import {
   Router as WouterRouter,
 } from 'wouter';
 
-const queryClient = new QueryClient();
+import { Shell } from "@/components/layout/Shell";
+import Dashboard from "@/pages/dashboard";
+import Study from "@/pages/study";
+import Progress from "@/pages/progress";
+import Materials from "@/pages/materials";
+import Revision from "@/pages/revision";
+import Syllabus from "@/pages/syllabus";
+import Settings from "@/pages/settings";
 
-function Home() {
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Replit Agent is building...
-        </h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Your app will appear here once it's ready.
-        </p>
-      </div>
-    </div>
-  );
-}
+const queryClient = new QueryClient();
 
 function Router() {
   return (
-    // Keep a shared shell (sidebar, navbar) outside the boundary so it
-    // survives a page crash.
-    <RoutedErrorBoundary>
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route component={NotFound} />
-      </Switch>
-    </RoutedErrorBoundary>
+    <Shell>
+      <RoutedErrorBoundary>
+        <Switch>
+          <Route path="/" component={Dashboard} />
+          <Route path="/study" component={Study} />
+          <Route path="/progress" component={Progress} />
+          <Route path="/materials" component={Materials} />
+          <Route path="/revision" component={Revision} />
+          <Route path="/syllabus" component={Syllabus} />
+          <Route path="/settings" component={Settings} />
+          <Route component={NotFound} />
+        </Switch>
+      </RoutedErrorBoundary>
+    </Shell>
   );
 }
 
