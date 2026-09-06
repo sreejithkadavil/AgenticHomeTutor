@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Home Tutor"
+description = "A curriculum-aware AI home tutor for families. Parents connect school material and track progress while students have guided study sessions that adapt to their understanding and schedule revision."
+version = "1.0.0"
+id = "artifacts/home-tutor"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22077
+
+[services.development]
+run = "pnpm --filter @workspace/home-tutor run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/home-tutor", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/home-tutor/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22077"
+BASE_PATH = "/"
