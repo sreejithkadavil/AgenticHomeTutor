@@ -89,6 +89,7 @@ export interface SchoolMaterial {
 
 export interface RevisionItem {
   id: string;
+  objectiveId: string;
   objective: string;
   topic: string;
   subject: string;

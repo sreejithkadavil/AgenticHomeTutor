@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { 
-  useGetDashboard, 
-  useStartStudySession,
-  getGetDashboardQueryKey 
+import {
+  useGetDashboard,
+  getGetDashboardQueryKey
 } from "@workspace/api-client-react";
 import { useActiveStudent } from "@/hooks/use-active-student";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +21,6 @@ export default function Dashboard() {
       queryKey: getGetDashboardQueryKey(),
     }
   });
-  const startSession = useStartStudySession();
   const [, setLocation] = useLocation();
 
   if (studentLoading || dashboardLoading) {
@@ -56,14 +54,9 @@ export default function Dashboard() {
   }
 
   const handleFastStart = () => {
-    startSession.mutate(
-      { studentId: student.id, data: { subject: dashboard?.weakArea } },
-      {
-        onSuccess: () => {
-          setLocation("/study");
-        }
-      }
-    );
+    const params = new URLSearchParams();
+    if (dashboard?.weakArea) params.set("subject", dashboard.weakArea);
+    setLocation(params.size ? `/study?${params}` : "/study");
   };
 
   return (
@@ -79,9 +72,8 @@ export default function Dashboard() {
             <Flame className="w-5 h-5 text-secondary" />
             {student.streak} Day Streak
           </div>
-          <Button 
-            onClick={handleFastStart} 
-            disabled={startSession.isPending}
+          <Button
+            onClick={handleFastStart}
             className="rounded-full shadow-md gap-2 pl-4 pr-5 group"
           >
             <Brain className="w-4 h-4" />

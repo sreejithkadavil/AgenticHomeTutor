@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef } from "react";
+import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetClass6Curriculum,
@@ -7,6 +8,7 @@ import {
   useExtractCurriculumMaterialText,
   getListCurriculumUploadsQueryKey
 } from "@workspace/api-client-react";
+import { useActiveStudent } from "@/hooks/use-active-student";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -15,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Info, UploadCloud, FileText, CheckCircle2, AlertCircle, Library, BookOpen, Loader2 } from "lucide-react";
+import { Search, Info, UploadCloud, FileText, CheckCircle2, AlertCircle, Library, BookOpen, Loader2, Brain } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 
@@ -49,9 +51,24 @@ export default function Syllabus() {
 
 function CurriculumBrowser() {
   const { data: curriculum, isLoading } = useGetClass6Curriculum();
+  const { student } = useActiveStudent();
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const [selectedSubject, setSelectedSubject] = useState<string>("All");
   const [selectedStrand, setSelectedStrand] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
+
+  const handleStartSession = (subject: string, objectiveId: string) => {
+    if (!student) {
+      toast({
+        title: "No student profile yet",
+        description: "Set up a student profile in Settings before starting a session.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setLocation(`/study?${new URLSearchParams({ subject, objectiveId })}`);
+  };
 
   const filteredObjectives = useMemo(() => {
     if (!curriculum) return [];
@@ -252,10 +269,19 @@ function CurriculumBrowser() {
                         <h4 className="font-semibold text-base leading-snug">{obj.topic}</h4>
                         <p className="text-sm text-foreground/90">{obj.objective}</p>
                       </div>
-                      <div className="text-right">
+                      <div className="flex flex-col items-end gap-2 shrink-0">
                         <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold bg-muted/50 px-2 py-1 rounded">
                           Source: {obj.source}
                         </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 h-8 text-xs"
+                          onClick={() => handleStartSession(obj.subject, obj.id)}
+                        >
+                          <Brain className="w-3.5 h-3.5" />
+                          Start Session
+                        </Button>
                       </div>
                     </div>
                   </CardContent>

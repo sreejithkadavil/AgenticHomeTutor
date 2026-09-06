@@ -1,5 +1,5 @@
 import { useActiveStudent } from "@/hooks/use-active-student";
-import { getGetStudentRevisionQueryKey, useGetStudentRevision, useStartStudySession } from "@workspace/api-client-react";
+import { getGetStudentRevisionQueryKey, useGetStudentRevision } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,7 +15,6 @@ export default function Revision() {
       queryKey: getGetStudentRevisionQueryKey(student?.id || ""),
     }
   });
-  const startSession = useStartStudySession();
   const [, setLocation] = useLocation();
 
   if (isLoading) {
@@ -29,13 +28,8 @@ export default function Revision() {
   }
 
   const handleStartRevision = (subject: string, objectiveId: string) => {
-    if (!student) return;
-    startSession.mutate({
-      studentId: student.id,
-      data: { subject, objectiveId }
-    }, {
-      onSuccess: () => setLocation("/study")
-    });
+    const params = new URLSearchParams({ subject, objectiveId });
+    setLocation(`/study?${params}`);
   };
 
   return (
@@ -70,10 +64,9 @@ export default function Revision() {
                     <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Current Mastery</div>
                     <div className="text-2xl font-bold tracking-tighter text-primary">{Math.round(rev.mastery * 100)}%</div>
                   </div>
-                  <Button 
+                  <Button
                     className="w-full shadow-sm gap-2"
-                    onClick={() => handleStartRevision(rev.subject, rev.id)}
-                    disabled={startSession.isPending}
+                    onClick={() => handleStartRevision(rev.subject, rev.objectiveId)}
                   >
                     <Brain className="w-4 h-4" />
                     Review Now

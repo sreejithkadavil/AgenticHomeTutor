@@ -483,6 +483,7 @@ router.get("/students/:studentId/revision", async (req, res): Promise<void> => {
   const rows = await db
     .select({
       id: revisionTable.id,
+      objectiveId: revisionTable.objectiveId,
       objective: objectivesTable.objective,
       topic: objectivesTable.topic,
       subject: objectivesTable.subject,

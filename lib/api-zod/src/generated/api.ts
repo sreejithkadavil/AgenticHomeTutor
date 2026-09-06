@@ -147,6 +147,7 @@ export const GetStudentRevisionParams = zod.object({
 
 export const GetStudentRevisionResponseItem = zod.object({
   "id": zod.string(),
+  "objectiveId": zod.string(),
   "objective": zod.string(),
   "topic": zod.string(),
   "subject": zod.string(),

@@ -398,6 +398,7 @@ components:
       type: object
       properties:
         id: { type: string }
+        objectiveId: { type: string }
         objective: { type: string }
         topic: { type: string }
         subject: { type: string }
@@ -405,7 +406,7 @@ components:
         daysUntil: { type: integer }
         mastery: { type: number }
         reason: { type: string }
-      required: [id, objective, topic, subject, dueLabel, daysUntil, mastery, reason]
+      required: [id, objectiveId, objective, topic, subject, dueLabel, daysUntil, mastery, reason]
     Dashboard:
       type: object
       properties:

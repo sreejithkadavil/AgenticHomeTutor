@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useActiveStudent } from "@/hooks/use-active-student";
 import { useSubmitTutorTurn, useCompleteStudySession, useStartStudySession, useCreateRealtimeClientSecret, useRecordRealtimeTurn } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 export default function Study() {
   const { student } = useActiveStudent();
   const [, setLocation] = useLocation();
+  const search = useSearch();
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [voiceState, setVoiceState] = useState<"idle" | "connecting" | "listening" | "speaking" | "error">("idle");
@@ -46,13 +47,16 @@ export default function Study() {
 
   useEffect(() => {
     if (!student || sessionId || startSession.isPending) return;
-    startSession.mutate({ studentId: student.id, data: {} }, {
+    const params = new URLSearchParams(search);
+    const subject = params.get("subject") ?? undefined;
+    const objectiveId = params.get("objectiveId") ?? undefined;
+    startSession.mutate({ studentId: student.id, data: { subject, objectiveId } }, {
       onSuccess: (session) => {
         setSessionId(session.id); setSessionPrompt(session.objective);
         setHistory([{ role: "tutor", content: session.prompt, type: session.promptType }]);
       },
     });
-  }, [student, sessionId, startSession]);
+  }, [student, sessionId, startSession, search]);
 
   useEffect(() => () => {
     peerRef.current?.close(); streamRef.current?.getTracks().forEach((track) => track.stop());
