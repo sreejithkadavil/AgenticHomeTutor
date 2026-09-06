@@ -309,34 +309,12 @@ router.get("/dashboard", async (req, res): Promise<void> => {
     GetDashboardResponse.parse({
       student: asStudent(student),
       overallMastery,
-      masteryDelta: 0.07,
-      studyMinutes: 86,
-      sessionsThisWeek: 4,
+      masteryDelta: 0,
+      studyMinutes: 0,
+      sessionsThisWeek: 0,
       revisionDue: revisionRows.filter((item) => item.daysUntil <= 0).length,
-      weakArea: "Using evidence to support an inference",
-      recentActivity: [
-        {
-          id: "activity-1",
-          title: "Reading inference practice",
-          detail: "Arya improved after a targeted hint.",
-          timeLabel: "Today, 4:18 PM",
-          type: "session",
-        },
-        {
-          id: "activity-2",
-          title: "New worksheet mapped",
-          detail: "Fractions practice set matched to 1 learning objective.",
-          timeLabel: "Today, 9:16 AM",
-          type: "material",
-        },
-        {
-          id: "activity-3",
-          title: "Revision scheduled",
-          detail: "Fractions will return tomorrow for a short retest.",
-          timeLabel: "Yesterday",
-          type: "revision",
-        },
-      ],
+      weakArea: "",
+      recentActivity: [],
       subjectSummary: [...grouped.entries()].map(([subject, value]) => ({
         subject,
         mastery: value.total / value.count,
@@ -388,15 +366,6 @@ router.post("/students", async (req, res): Promise<void> => {
       nextSession: "Ready when you are",
     })
     .returning();
-  const objectives = await db.select().from(objectivesTable)
-    .where(eq(objectivesTable.grade, student.grade));
-  if (objectives.length) {
-    await db.insert(masteryTable).values(objectives.map((objective) => ({
-      id: randomUUID(), studentId: student.id, objectiveId: objective.id,
-      mastery: 0.2, trend: "steady", lastPracticed: "Not started",
-    })));
-  }
-
   res.status(201).json(CreateStudentResponse.parse(asStudent(student)));
 });
 
