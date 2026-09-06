@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte } from "drizzle-orm";
 import {
   attemptsTable,
   appUsersTable,
@@ -174,6 +174,21 @@ function asUpload(upload: typeof curriculumUploadsTable.$inferSelect) {
   };
 }
 
+function activityTimeLabel(date: Date, now: Date): string {
+  const elapsedMinutes = Math.max(
+    0,
+    Math.floor((now.getTime() - date.getTime()) / 60_000),
+  );
+  if (elapsedMinutes < 1) return "Just now";
+  if (elapsedMinutes < 60) return `${elapsedMinutes}m ago`;
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours}h ago`;
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  if (elapsedDays === 1) return "Yesterday";
+  if (elapsedDays < 7) return `${elapsedDays}d ago`;
+  return date.toLocaleDateString("en", { month: "short", day: "numeric" });
+}
+
 function inferMaterialKind(fileName?: string | null): string {
   const extension = fileName?.split(".").pop()?.toUpperCase();
   return extension && extension.length <= 5 ? extension : "Text";
@@ -274,23 +289,78 @@ router.get("/dashboard", async (req, res): Promise<void> => {
     return;
   }
 
-  const masteryRows = await db
-    .select({
-      mastery: masteryTable.mastery,
-      subject: objectivesTable.subject,
-      color: objectivesTable.color,
-    })
-    .from(masteryTable)
-    .innerJoin(
-      objectivesTable,
-      eq(masteryTable.objectiveId, objectivesTable.id),
-    )
-    .where(eq(masteryTable.studentId, student.id));
+  const now = new Date();
+  const weekStart = new Date(now);
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
 
-  const revisionRows = await db
-    .select()
-    .from(revisionTable)
-    .where(eq(revisionTable.studentId, student.id));
+  const [masteryRows, revisionRows, sessionRows, materialRows, attemptRows] =
+    await Promise.all([
+      db
+        .select({
+          mastery: masteryTable.mastery,
+          subject: objectivesTable.subject,
+          color: objectivesTable.color,
+        })
+        .from(masteryTable)
+        .innerJoin(
+          objectivesTable,
+          eq(masteryTable.objectiveId, objectivesTable.id),
+        )
+        .where(eq(masteryTable.studentId, student.id)),
+      db
+        .select({
+          id: revisionTable.id,
+          daysUntil: revisionTable.daysUntil,
+          dueLabel: revisionTable.dueLabel,
+          reason: revisionTable.reason,
+          subject: objectivesTable.subject,
+          topic: objectivesTable.topic,
+        })
+        .from(revisionTable)
+        .innerJoin(
+          objectivesTable,
+          eq(revisionTable.objectiveId, objectivesTable.id),
+        )
+        .where(eq(revisionTable.studentId, student.id)),
+      db
+        .select({
+          id: sessionsTable.id,
+          status: sessionsTable.status,
+          turnCount: sessionsTable.turnCount,
+          startedAt: sessionsTable.startedAt,
+          completedAt: sessionsTable.completedAt,
+          subject: objectivesTable.subject,
+          topic: objectivesTable.topic,
+        })
+        .from(sessionsTable)
+        .innerJoin(
+          objectivesTable,
+          eq(sessionsTable.objectiveId, objectivesTable.id),
+        )
+        .where(eq(sessionsTable.studentId, student.id))
+        .orderBy(desc(sessionsTable.startedAt)),
+      db
+        .select()
+        .from(materialsTable)
+        .where(eq(materialsTable.studentId, student.id)),
+      db
+        .select({
+          metadata: attemptsTable.metadata,
+          createdAt: attemptsTable.createdAt,
+        })
+        .from(attemptsTable)
+        .innerJoin(
+          sessionsTable,
+          eq(attemptsTable.sessionId, sessionsTable.id),
+        )
+        .where(
+          and(
+            eq(sessionsTable.studentId, student.id),
+            gte(attemptsTable.createdAt, weekStart),
+          ),
+        ),
+    ]);
 
   const overallMastery =
     masteryRows.reduce((sum, row) => sum + row.mastery, 0) /
@@ -310,24 +380,88 @@ router.get("/dashboard", async (req, res): Promise<void> => {
     grouped.set(row.subject, current);
   }
 
+  const masteryDelta = attemptRows.reduce((total, attempt) => {
+    const before = attempt.metadata.masteryBefore;
+    const after = attempt.metadata.masteryAfter;
+    return typeof before === "number" && typeof after === "number"
+      ? total + after - before
+      : total;
+  }, 0);
+  const studyMinutes = Math.round(
+    sessionRows.reduce((total, session) => {
+      if (!session.completedAt || session.startedAt < weekStart) return total;
+      return total + Math.max(
+        0,
+        session.completedAt.getTime() - session.startedAt.getTime(),
+      );
+    }, 0) / 60_000,
+  );
+  const sessionsThisWeek = sessionRows.filter(
+    (session) => session.startedAt >= weekStart,
+  ).length;
+  const weakArea = [...grouped.entries()]
+    .sort(
+      ([subjectA, valueA], [subjectB, valueB]) =>
+        valueA.total / valueA.count - valueB.total / valueB.count ||
+        subjectA.localeCompare(subjectB),
+    )[0]?.[0] ?? "";
+
+  const recentActivity = [
+    ...sessionRows.map((session) => ({
+      id: `session-${session.id}`,
+      title: session.status === "completed" ? `${session.subject} session completed` : `${session.subject} session started`,
+      detail: `${session.topic} · ${session.turnCount} ${session.turnCount === 1 ? "response" : "responses"}`,
+      timeLabel: activityTimeLabel(session.completedAt ?? session.startedAt, now),
+      type: "session" as const,
+      sortAt: session.completedAt ?? session.startedAt,
+    })),
+    ...materialRows.flatMap((material) => {
+      const receivedAt = new Date(material.receivedAt);
+      if (Number.isNaN(receivedAt.getTime())) return [];
+      return [{
+        id: `material-${material.id}`,
+        title: material.title,
+        detail: `${material.kind} material from ${material.source}`,
+        timeLabel: activityTimeLabel(receivedAt, now),
+        type: "material" as const,
+        sortAt: receivedAt,
+      }];
+    }),
+    ...revisionRows.map((revision) => {
+      return {
+        id: `revision-${revision.id}`,
+        title: `${revision.subject} revision ${revision.daysUntil <= 0 ? "due" : "scheduled"}`,
+        detail: `${revision.topic} · ${revision.reason}`,
+        timeLabel: revision.dueLabel,
+        type: "revision" as const,
+        // Revision records currently describe a due state rather than storing
+        // an event timestamp. Due items are current activity; future items
+        // remain available after timestamped session and material events.
+        sortAt: revision.daysUntil <= 0 ? now : new Date(0),
+      };
+    }),
+  ]
+    .sort((a, b) => b.sortAt.getTime() - a.sortAt.getTime())
+    .slice(0, 8)
+    .map(({ sortAt: _sortAt, ...activity }) => activity);
+
   res.json(
     GetDashboardResponse.parse({
       student: asStudent(student),
       overallMastery,
-      masteryDelta: 0,
-      studyMinutes: 0,
-      sessionsThisWeek: 0,
+      masteryDelta,
+      studyMinutes,
+      sessionsThisWeek,
       revisionDue: revisionRows.filter((item) => item.daysUntil <= 0).length,
-      weakArea: "",
-      recentActivity: [],
+      weakArea,
+      recentActivity,
       subjectSummary: [...grouped.entries()].map(([subject, value]) => ({
         subject,
         mastery: value.total / value.count,
         objectiveCount: value.count,
-        dueCount:
-          subject === "English"
-            ? revisionRows.filter((item) => item.daysUntil <= 0).length
-            : 0,
+        dueCount: revisionRows.filter(
+          (item) => item.subject === subject && item.daysUntil <= 0,
+        ).length,
         accent: value.color,
       })),
     }),
@@ -544,24 +678,37 @@ router.post(
       req.log.warn({ err: error }, "Falling back to a templated session opener; concept explanation is unavailable");
     }
 
-    const [session] = await db.transaction(async (tx) => {
-      // Objectives are matched to this student by grade, not by a
-      // pre-seeded mastery row (student creation no longer seeds one) — so
-      // the first time a student works on a given objective, create its
-      // mastery row now. Every later route (turn submission, revision,
-      // dashboard) inner-joins on this row, so without it the session
-      // would 404 on the very first answer.
-      if (selected.mastery === null) {
-        await tx.insert(masteryTable).values({
-          id: randomUUID(),
-          studentId: params.data.studentId,
-          objectiveId: selected.objectiveId,
-          mastery: 0.15,
-          trend: "steady",
-          lastPracticed: "Not started",
-        });
+    // Objectives are matched to this student by grade, not by a
+    // pre-seeded mastery row (student creation no longer seeds one) — so
+    // the first time a student works on a given objective, create its
+    // mastery row now. Every later route (turn submission, revision,
+    // dashboard) inner-joins on this row, so without it the session
+    // would 404 on the very first answer.
+    const session = await db.transaction(async (tx) => {
+      if (selected.mastery == null) {
+        const [existingMastery] = await tx
+          .select({ id: masteryTable.id })
+          .from(masteryTable)
+          .where(
+            and(
+              eq(masteryTable.studentId, params.data.studentId),
+              eq(masteryTable.objectiveId, selected.objectiveId),
+            ),
+          )
+          .limit(1);
+        if (!existingMastery) {
+          await tx.insert(masteryTable).values({
+            id: randomUUID(),
+            studentId: params.data.studentId,
+            objectiveId: selected.objectiveId,
+            mastery: 0,
+            trend: "steady",
+            lastPracticed: "Not started",
+          });
+        }
       }
-      return tx
+
+      const [createdSession] = await tx
         .insert(sessionsTable)
         .values({
           id: randomUUID(),
@@ -574,6 +721,7 @@ router.post(
           exercisePending: false,
         })
         .returning();
+      return createdSession;
     });
 
     res.status(201).json(
