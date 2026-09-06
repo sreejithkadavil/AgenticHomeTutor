@@ -10,6 +10,16 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: dashboard
+    description: Parent overview operations
+  - name: students
+    description: Student and learning progress operations
+  - name: tutor
+    description: Guided tutor session operations
+  - name: materials
+    description: School material operations
+  - name: integrations
+    description: External source connection operations
 paths:
   /healthz:
     get:
@@ -24,7 +34,201 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get the parent dashboard
+      responses:
+        "200":
+          description: Dashboard overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+  /students:
+    get:
+      operationId: listStudents
+      tags: [students]
+      summary: List students for the current parent
+      responses:
+        "200":
+          description: Students
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Student"
+    post:
+      operationId: createStudent
+      tags: [students]
+      summary: Create a student profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudentInput"
+      responses:
+        "201":
+          description: Created student
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Student"
+  /students/{studentId}/mastery:
+    get:
+      operationId: getStudentMastery
+      tags: [students]
+      summary: Get mastery by subject and objective
+      parameters:
+        - $ref: "#/components/parameters/StudentId"
+      responses:
+        "200":
+          description: Mastery overview
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Mastery"
+  /students/{studentId}/materials:
+    get:
+      operationId: getStudentMaterials
+      tags: [materials]
+      summary: Get retrieved school material for a student
+      parameters:
+        - $ref: "#/components/parameters/StudentId"
+      responses:
+        "200":
+          description: School material
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SchoolMaterial"
+  /students/{studentId}/revision:
+    get:
+      operationId: getStudentRevision
+      tags: [students]
+      summary: Get the revision queue for a student
+      parameters:
+        - $ref: "#/components/parameters/StudentId"
+      responses:
+        "200":
+          description: Revision queue
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RevisionItem"
+  /students/{studentId}/study-sessions:
+    post:
+      operationId: startStudySession
+      tags: [tutor]
+      summary: Start a guided study session
+      parameters:
+        - $ref: "#/components/parameters/StudentId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudySessionInput"
+      responses:
+        "201":
+          description: Started session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudySession"
+  /study-sessions/{sessionId}/turns:
+    post:
+      operationId: submitTutorTurn
+      tags: [tutor]
+      summary: Submit one answer or voice transcript to the tutor
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TutorTurnInput"
+      responses:
+        "200":
+          description: Tutor response and updated learning state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TutorTurn"
+  /study-sessions/{sessionId}/complete:
+    post:
+      operationId: completeStudySession
+      tags: [tutor]
+      summary: Complete a study session and schedule revision
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Session summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionSummary"
+  /gmail/status:
+    get:
+      operationId: getGmailStatus
+      tags: [integrations]
+      summary: Get Gmail connection and sync status
+      responses:
+        "200":
+          description: Gmail status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GmailStatus"
+  /gmail/sync:
+    post:
+      operationId: syncGmail
+      tags: [integrations]
+      summary: Sync selected Gmail labels
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GmailSyncInput"
+      responses:
+        "202":
+          description: Sync accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GmailStatus"
+        "409":
+          description: Gmail is not connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
+  parameters:
+    StudentId:
+      name: studentId
+      in: path
+      required: true
+      schema:
+        type: string
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +237,195 @@ components:
           type: string
       required:
         - status
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    Student:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        grade: { type: string }
+        syllabus: { type: string }
+        avatar: { type: string }
+        streak: { type: integer }
+        nextSession: { type: string }
+      required: [id, name, grade, syllabus, avatar, streak, nextSession]
+    StudentInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        grade: { type: string, minLength: 1 }
+        syllabus: { type: string, minLength: 1 }
+      required: [name, grade, syllabus]
+    Mastery:
+      type: object
+      properties:
+        id: { type: string }
+        subject: { type: string }
+        topic: { type: string }
+        objective: { type: string }
+        mastery: { type: number, minimum: 0, maximum: 1 }
+        trend:
+          type: string
+          enum: [up, steady, down]
+        color: { type: string }
+        lastPracticed: { type: string }
+      required: [id, subject, topic, objective, mastery, trend, color, lastPracticed]
+    SchoolMaterial:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        kind:
+          type: string
+          enum: [worksheet, notes, assignment, test, document]
+        source: { type: string }
+        receivedAt: { type: string }
+        status:
+          type: string
+          enum: [mapped, processing, needs_review]
+        subjects:
+          type: array
+          items: { type: string }
+        preview: { type: string }
+      required: [id, title, kind, source, receivedAt, status, subjects, preview]
+    RevisionItem:
+      type: object
+      properties:
+        id: { type: string }
+        objective: { type: string }
+        topic: { type: string }
+        subject: { type: string }
+        dueLabel: { type: string }
+        daysUntil: { type: integer }
+        mastery: { type: number }
+        reason: { type: string }
+      required: [id, objective, topic, subject, dueLabel, daysUntil, mastery, reason]
+    Dashboard:
+      type: object
+      properties:
+        student: { $ref: "#/components/schemas/Student" }
+        overallMastery: { type: number }
+        masteryDelta: { type: number }
+        studyMinutes: { type: integer }
+        sessionsThisWeek: { type: integer }
+        revisionDue: { type: integer }
+        weakArea: { type: string }
+        recentActivity:
+          type: array
+          items:
+            $ref: "#/components/schemas/Activity"
+        subjectSummary:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubjectSummary"
+      required: [student, overallMastery, masteryDelta, studyMinutes, sessionsThisWeek, revisionDue, weakArea, recentActivity, subjectSummary]
+    Activity:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        detail: { type: string }
+        timeLabel: { type: string }
+        type:
+          type: string
+          enum: [session, mastery, material, revision]
+      required: [id, title, detail, timeLabel, type]
+    SubjectSummary:
+      type: object
+      properties:
+        subject: { type: string }
+        mastery: { type: number }
+        objectiveCount: { type: integer }
+        dueCount: { type: integer }
+        accent: { type: string }
+      required: [subject, mastery, objectiveCount, dueCount, accent]
+    StudySessionInput:
+      type: object
+      properties:
+        subject: { type: string }
+        objectiveId: { type: string }
+      required: []
+    StudySession:
+      type: object
+      properties:
+        id: { type: string }
+        studentId: { type: string }
+        subject: { type: string }
+        topic: { type: string }
+        objective: { type: string }
+        prompt: { type: string }
+        promptType:
+          type: string
+          enum: [explain, question, reflect]
+        turnCount: { type: integer }
+        estimatedMinutes: { type: integer }
+        voiceReady: { type: boolean }
+      required: [id, studentId, subject, topic, objective, prompt, promptType, turnCount, estimatedMinutes, voiceReady]
+    TutorTurnInput:
+      type: object
+      properties:
+        answer: { type: string, minLength: 1 }
+        inputMode:
+          type: string
+          enum: [text, voice]
+      required: [answer, inputMode]
+    TutorTurn:
+      type: object
+      properties:
+        sessionId: { type: string }
+        response: { type: string }
+        responseType:
+          type: string
+          enum: [encourage, hint, explain, retest, complete]
+        evaluation:
+          type: string
+          enum: [correct, almost, incorrect, pending]
+        mastery: { type: number }
+        nextPrompt: { type: string }
+        nextPromptType:
+          type: string
+          enum: [explain, question, reflect]
+        turnCount: { type: integer }
+        misconception:
+          type: [string, "null"]
+        canUseVoice: { type: boolean }
+      required: [sessionId, response, responseType, evaluation, mastery, nextPrompt, nextPromptType, turnCount, misconception, canUseVoice]
+    SessionSummary:
+      type: object
+      properties:
+        sessionId: { type: string }
+        topic: { type: string }
+        learned: { type: string }
+        weakness: { type: string }
+        mastery: { type: number }
+        nextStep: { type: string }
+        nextRevision: { type: string }
+      required: [sessionId, topic, learned, weakness, mastery, nextStep, nextRevision]
+    GmailStatus:
+      type: object
+      properties:
+        connected: { type: boolean }
+        email: { type: [string, "null"] }
+        selectedLabels:
+          type: array
+          items: { type: string }
+        lastSyncedAt: { type: [string, "null"] }
+        materialCount: { type: integer }
+        state:
+          type: string
+          enum: [not_connected, ready, syncing, synced]
+      required: [connected, email, selectedLabels, lastSyncedAt, materialCount, state]
+    GmailSyncInput:
+      type: object
+      properties:
+        labels:
+          type: array
+          items: { type: string }
+          minItems: 1
+      required: [labels]
 
