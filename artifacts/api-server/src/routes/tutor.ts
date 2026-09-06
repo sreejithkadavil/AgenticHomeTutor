@@ -1,8 +1,10 @@
-import { randomUUID } from "node:crypto";
-import { Router, type IRouter } from "express";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { Router, type IRouter, type Request, type Response } from "express";
+import { getAuth } from "@clerk/express";
 import { and, asc, eq } from "drizzle-orm";
 import {
   attemptsTable,
+  appUsersTable,
   curriculumUploadsTable,
   db,
   masteryTable,
@@ -32,6 +34,8 @@ import {
   SubmitTutorTurnBody,
   SubmitTutorTurnParams,
   SubmitTutorTurnResponse,
+  RecordRealtimeTurnParams,
+  RecordRealtimeTurnBody,
   SyncGmailBody,
   CreateCurriculumUploadBody,
   CreateCurriculumUploadResponse,
@@ -45,8 +49,33 @@ import {
 } from "../data/class6Curriculum";
 
 const router: IRouter = Router();
-const DEMO_OWNER_ID = "demo-parent";
 let curriculumSeedPromise: Promise<void> | null = null;
+
+type CurrentUser = typeof appUsersTable.$inferSelect;
+
+async function currentUser(req: Request, res: Response): Promise<CurrentUser | null> {
+  const auth = getAuth(req);
+  const subject = auth?.sessionClaims?.userId || auth?.userId;
+  const clerkSubject = typeof subject === "string" ? subject : null;
+  if (!clerkSubject) {
+    res.status(401).json({ error: "Unauthorized" });
+    return null;
+  }
+  const [user] = await db.select().from(appUsersTable)
+    .where(eq(appUsersTable.clerkSubject, clerkSubject)).limit(1);
+  if (!user) {
+    res.status(403).json({ error: "Complete onboarding before accessing tutor data" });
+    return null;
+  }
+  return user;
+}
+
+async function accessibleStudent(user: CurrentUser, studentId: string) {
+  const [student] = await db.select().from(studentsTable).where(eq(studentsTable.id, studentId)).limit(1);
+  if (!student) return null;
+  return (user.role === "parent" && student.ownerId === user.id) ||
+    (user.role === "student" && student.linkedUserId === user.id) ? student : null;
+}
 
 function ensureClass6Curriculum() {
   if (curriculumSeedPromise) return curriculumSeedPromise;
@@ -63,34 +92,6 @@ function ensureClass6Curriculum() {
       )
       .onConflictDoNothing();
 
-    const students = await db
-      .select()
-      .from(studentsTable)
-      .where(eq(studentsTable.ownerId, DEMO_OWNER_ID));
-    const existingMastery = await db
-      .select({
-        studentId: masteryTable.studentId,
-        objectiveId: masteryTable.objectiveId,
-      })
-      .from(masteryTable);
-    const existing = new Set(
-      existingMastery.map((item) => `${item.studentId}:${item.objectiveId}`),
-    );
-    const rows = students
-      .filter((student) => student.grade.includes("6"))
-      .flatMap((student) =>
-        class6Objectives
-          .filter((objective) => !existing.has(`${student.id}:${objective.id}`))
-          .map((objective, index) => ({
-            id: randomUUID(),
-            studentId: student.id,
-            objectiveId: objective.id,
-            mastery: 0.28 + (index % 5) * 0.04,
-            trend: "steady",
-            lastPracticed: "Not started",
-          })),
-      );
-    if (rows.length) await db.insert(masteryTable).values(rows);
   })().catch((error) => {
     curriculumSeedPromise = null;
     throw error;
@@ -106,6 +107,29 @@ router.use(async (_req, res, next) => {
     console.error("Failed to prepare Class 6 curriculum", error);
     res.status(500).json({ error: "Unable to prepare curriculum data" });
   }
+});
+
+router.post("/auth/onboard", async (req, res): Promise<void> => {
+  const auth = getAuth(req);
+  const subject = auth?.sessionClaims?.userId || auth?.userId;
+  const clerkSubject = typeof subject === "string" ? subject : null;
+  const role = req.body?.role;
+  if (!clerkSubject) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (role !== "parent" && role !== "student") { res.status(400).json({ error: "Role must be parent or student" }); return; }
+  const [user] = await db.insert(appUsersTable).values({ id: randomUUID(), clerkSubject, role })
+    .onConflictDoNothing().returning();
+  const [existing] = user ? [user] : await db.select().from(appUsersTable).where(eq(appUsersTable.clerkSubject, clerkSubject)).limit(1);
+  if (existing.role !== role) { res.status(409).json({ error: "Role is already set and cannot be changed" }); return; }
+  res.status(201).json({ id: existing.id, role: existing.role });
+});
+
+router.get("/auth/me", async (req, res): Promise<void> => {
+  const auth = getAuth(req);
+  const subject = auth?.sessionClaims?.userId || auth?.userId;
+  const clerkSubject = typeof subject === "string" ? subject : null;
+  if (!clerkSubject) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const [user] = await db.select().from(appUsersTable).where(eq(appUsersTable.clerkSubject, clerkSubject)).limit(1);
+  res.json({ user: user ? { id: user.id, role: user.role } : null });
 });
 
 function asStudent(student: typeof studentsTable.$inferSelect) {
@@ -194,11 +218,12 @@ function parseImportedObjectives(input: {
   });
 }
 
-router.get("/dashboard", async (_req, res): Promise<void> => {
+router.get("/dashboard", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
   const [student] = await db
     .select()
     .from(studentsTable)
-    .where(eq(studentsTable.ownerId, DEMO_OWNER_ID))
+    .where(user.role === "parent" ? eq(studentsTable.ownerId, user.id) : eq(studentsTable.linkedUserId, user.id))
     .limit(1);
 
   if (!student) {
@@ -288,16 +313,19 @@ router.get("/dashboard", async (_req, res): Promise<void> => {
   );
 });
 
-router.get("/students", async (_req, res): Promise<void> => {
+router.get("/students", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
   const students = await db
     .select()
     .from(studentsTable)
-    .where(eq(studentsTable.ownerId, DEMO_OWNER_ID))
+    .where(user.role === "parent" ? eq(studentsTable.ownerId, user.id) : eq(studentsTable.linkedUserId, user.id))
     .orderBy(asc(studentsTable.createdAt));
   res.json(ListStudentsResponse.parse(students.map(asStudent)));
 });
 
 router.post("/students", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
+  if (user.role !== "parent") { res.status(403).json({ error: "Only parents can create student profiles" }); return; }
   const parsed = CreateStudentBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -313,7 +341,7 @@ router.post("/students", async (req, res): Promise<void> => {
     .insert(studentsTable)
     .values({
       id: randomUUID(),
-      ownerId: DEMO_OWNER_ID,
+      ownerId: user.id,
       name: parsed.data.name,
       grade: parsed.data.grade,
       syllabus: parsed.data.syllabus,
@@ -322,16 +350,49 @@ router.post("/students", async (req, res): Promise<void> => {
       nextSession: "Ready when you are",
     })
     .returning();
+  const objectives = await db.select().from(objectivesTable)
+    .where(eq(objectivesTable.grade, student.grade));
+  if (objectives.length) {
+    await db.insert(masteryTable).values(objectives.map((objective) => ({
+      id: randomUUID(), studentId: student.id, objectiveId: objective.id,
+      mastery: 0.2, trend: "steady", lastPracticed: "Not started",
+    })));
+  }
 
   res.status(201).json(CreateStudentResponse.parse(asStudent(student)));
 });
 
+router.post("/students/:studentId/link-code", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
+  if (user.role !== "parent") { res.status(403).json({ error: "Only parents can create link codes" }); return; }
+  const student = await accessibleStudent(user, req.params.studentId);
+  if (!student) { res.status(404).json({ error: "Student not found" }); return; }
+  const code = randomBytes(18).toString("base64url");
+  await db.update(studentsTable).set({ linkCodeHash: createHash("sha256").update(code).digest("hex") })
+    .where(eq(studentsTable.id, student.id));
+  res.json({ code, studentId: student.id });
+});
+
+router.post("/students/link", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
+  if (user.role !== "student") { res.status(403).json({ error: "Only student accounts can use a link code" }); return; }
+  const code = typeof req.body?.code === "string" ? req.body.code : "";
+  if (!code) { res.status(400).json({ error: "A link code is required" }); return; }
+  const hash = createHash("sha256").update(code).digest("hex");
+  const [student] = await db.select().from(studentsTable).where(eq(studentsTable.linkCodeHash, hash)).limit(1);
+  if (!student || student.linkedUserId) { res.status(404).json({ error: "This link code is invalid or has already been used" }); return; }
+  await db.update(studentsTable).set({ linkedUserId: user.id, linkCodeHash: null }).where(eq(studentsTable.id, student.id));
+  res.json(CreateStudentResponse.parse(asStudent(student)));
+});
+
 router.get("/students/:studentId/mastery", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
   const params = GetStudentMasteryParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
   }
+  if (!await accessibleStudent(user, params.data.studentId)) { res.status(404).json({ error: "Student not found" }); return; }
 
   const rows = await db
     .select({
@@ -356,11 +417,14 @@ router.get("/students/:studentId/mastery", async (req, res): Promise<void> => {
 });
 
 router.get("/students/:studentId/materials", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
+  if (user.role !== "parent") { res.status(403).json({ error: "Only parents can access school materials" }); return; }
   const params = GetStudentMaterialsParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
   }
+  if (!await accessibleStudent(user, params.data.studentId)) { res.status(404).json({ error: "Student not found" }); return; }
 
   const rows = await db
     .select()
@@ -370,11 +434,13 @@ router.get("/students/:studentId/materials", async (req, res): Promise<void> => 
 });
 
 router.get("/students/:studentId/revision", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
   const params = GetStudentRevisionParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
   }
+  if (!await accessibleStudent(user, params.data.studentId)) { res.status(404).json({ error: "Student not found" }); return; }
 
   const rows = await db
     .select({
@@ -408,12 +474,14 @@ router.get("/students/:studentId/revision", async (req, res): Promise<void> => {
 router.post(
   "/students/:studentId/study-sessions",
   async (req, res): Promise<void> => {
+    const user = await currentUser(req, res); if (!user) return;
     const params = StartStudySessionParams.safeParse(req.params);
     const body = StartStudySessionBody.safeParse(req.body ?? {});
     if (!params.success || !body.success) {
       res.status(400).json({ error: "Invalid study session request" });
       return;
     }
+    if (!await accessibleStudent(user, params.data.studentId)) { res.status(404).json({ error: "Student not found" }); return; }
 
     const candidates = await db
       .select({
@@ -475,6 +543,7 @@ router.post(
 router.post(
   "/study-sessions/:sessionId/turns",
   async (req, res): Promise<void> => {
+    const user = await currentUser(req, res); if (!user) return;
     const params = SubmitTutorTurnParams.safeParse(req.params);
     const body = SubmitTutorTurnBody.safeParse(req.body);
     if (!params.success || !body.success) {
@@ -507,6 +576,7 @@ router.post(
       res.status(404).json({ error: "Study session not found" });
       return;
     }
+    if (!await accessibleStudent(user, row.session.studentId)) { res.status(404).json({ error: "Study session not found" }); return; }
 
     const normalized = body.data.answer.toLowerCase();
     const topicWords = row.objective.topic
@@ -591,6 +661,7 @@ router.post(
 router.post(
   "/study-sessions/:sessionId/complete",
   async (req, res): Promise<void> => {
+    const user = await currentUser(req, res); if (!user) return;
     const params = CompleteStudySessionParams.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: params.error.message });
@@ -622,6 +693,7 @@ router.post(
       res.status(404).json({ error: "Study session not found" });
       return;
     }
+    if (!await accessibleStudent(user, row.session.studentId)) { res.status(404).json({ error: "Study session not found" }); return; }
 
     await db
       .update(sessionsTable)
@@ -645,20 +717,96 @@ router.post(
   },
 );
 
-router.get("/curricula/class-6", async (_req, res): Promise<void> => {
+router.post("/realtime/client-secret", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
+  if (user.role !== "student") { res.status(403).json({ error: "Realtime tutoring is available only to the linked student account" }); return; }
+  const studentId = typeof req.body?.studentId === "string" ? req.body.studentId : "";
+  const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
+  const student = await accessibleStudent(user, studentId);
+  if (!student) { res.status(404).json({ error: "Student not found" }); return; }
+  const [session] = await db.select({ session: sessionsTable, objective: objectivesTable })
+    .from(sessionsTable).innerJoin(objectivesTable, eq(sessionsTable.objectiveId, objectivesTable.id))
+    .where(and(eq(sessionsTable.id, sessionId), eq(sessionsTable.studentId, studentId))).limit(1);
+  if (!session || session.session.status !== "active") { res.status(404).json({ error: "Active study session not found" }); return; }
+  if (!process.env.OPENAI_API_KEY) { res.status(503).json({ error: "Voice tutoring is not configured" }); return; }
+  const safetyIdentifier = createHash("sha256").update(user.clerkSubject).digest("hex");
+  const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+      "OpenAI-Safety-Identifier": safetyIdentifier,
+    },
+    body: JSON.stringify({ session: {
+      type: "realtime", model: "gpt-realtime-2.1-mini",
+      audio: {
+        input: {
+          transcription: { model: "gpt-4o-mini-transcribe", language: "en" },
+          turn_detection: {
+            type: "server_vad",
+            create_response: true,
+            interrupt_response: true,
+          },
+        },
+        output: { voice: "marin" },
+      },
+      instructions: `You are a patient voice tutor for ${student.name}. Focus only on this objective: ${session.objective.objective}. Ask one short question at a time, wait for an answer, give age-appropriate hints rather than answers, and keep the learner safe and on task.`,
+    }}),
+  });
+  if (!response.ok) { req.log.error({ status: response.status }, "OpenAI realtime secret request failed"); res.status(502).json({ error: "Unable to start voice tutoring" }); return; }
+  const payload = await response.json() as { value?: string; expires_at?: number };
+  if (!payload.value) { res.status(502).json({ error: "Voice tutoring returned an invalid session secret" }); return; }
+  res.json({ value: payload.value, expiresAt: payload.expires_at ?? null });
+});
+
+router.post("/study-sessions/:sessionId/realtime-turns", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
+  const params = RecordRealtimeTurnParams.safeParse(req.params);
+  const body = RecordRealtimeTurnBody.safeParse(req.body);
+  if (!params.success || !body.success) { res.status(400).json({ error: "Invalid Realtime transcript" }); return; }
+  const [row] = await db.select({ session: sessionsTable, objective: objectivesTable, mastery: masteryTable })
+    .from(sessionsTable).innerJoin(objectivesTable, eq(sessionsTable.objectiveId, objectivesTable.id))
+    .innerJoin(masteryTable, and(eq(masteryTable.objectiveId, sessionsTable.objectiveId), eq(masteryTable.studentId, sessionsTable.studentId)))
+    .where(eq(sessionsTable.id, params.data.sessionId)).limit(1);
+  if (!row || !await accessibleStudent(user, row.session.studentId)) { res.status(404).json({ error: "Study session not found" }); return; }
+  if (row.session.status !== "active") { res.status(409).json({ error: "Study session is no longer active" }); return; }
+  const answer = body.data.studentTranscript;
+  const topicWords = row.objective.topic.toLowerCase().split(/\W+/).filter((word) => word.length >= 4);
+  const normalized = answer.toLowerCase();
+  const usesTopicLanguage = topicWords.some((word) => normalized.includes(word));
+  const evaluation = normalized.trim().length >= 40 && usesTopicLanguage ? "correct" : (usesTopicLanguage || normalized.trim().length >= 18 ? "almost" : "incorrect");
+  const delta = evaluation === "correct" ? 0.1 : evaluation === "almost" ? 0.03 : -0.02;
+  const mastery = Math.max(0.05, Math.min(0.98, row.mastery.mastery + delta));
+  const turnCount = row.session.turnCount + 1;
+  const misconception = evaluation === "correct" ? null : "Review the target idea with a concrete example before moving on.";
+  await db.transaction(async (tx) => {
+    await tx.update(sessionsTable).set({ turnCount }).where(eq(sessionsTable.id, row.session.id));
+    await tx.update(masteryTable).set({ mastery, trend: delta > 0 ? "up" : "down", lastPracticed: "Just now", updatedAt: new Date() }).where(eq(masteryTable.id, row.mastery.id));
+    await tx.insert(attemptsTable).values({ id: randomUUID(), sessionId: row.session.id, answer, inputMode: "voice", evaluation, misconception, metadata: { assistantTranscript: body.data.assistantTranscript, usage: body.data.usage, masteryBefore: row.mastery.mastery, masteryAfter: mastery } });
+    if (mastery < 0.7) await tx.insert(revisionTable).values({ id: randomUUID(), studentId: row.session.studentId, objectiveId: row.objective.id, dueLabel: "Tomorrow", daysUntil: 1, reason: "Realtime response showed this objective needs a short retest." });
+  });
+  res.json(SubmitTutorTurnResponse.parse({ sessionId: row.session.id, response: body.data.assistantTranscript, responseType: evaluation === "correct" ? "retest" : "hint", evaluation, mastery, nextPrompt: "Explain one more example in your own words.", nextPromptType: "question", turnCount, misconception, canUseVoice: true }));
+});
+
+router.get("/curricula/class-6", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
   res.json(GetClass6CurriculumResponse.parse(class6Curriculum));
 });
 
-router.get("/curricula/uploads", async (_req, res): Promise<void> => {
+router.get("/curricula/uploads", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
+  if (user.role !== "parent") { res.status(403).json({ error: "Only parents can access curriculum uploads" }); return; }
   const rows = await db
     .select()
     .from(curriculumUploadsTable)
-    .where(eq(curriculumUploadsTable.ownerId, DEMO_OWNER_ID))
+    .where(eq(curriculumUploadsTable.ownerId, user.id))
     .orderBy(asc(curriculumUploadsTable.uploadedAt));
   res.json(ListCurriculumUploadsResponse.parse(rows.map(asUpload).reverse()));
 });
 
 router.post("/curricula/uploads", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
+  if (user.role !== "parent") { res.status(403).json({ error: "Only parents can import curriculum" }); return; }
   const parsed = CreateCurriculumUploadBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -672,7 +820,7 @@ router.post("/curricula/uploads", async (req, res): Promise<void> => {
       .insert(curriculumUploadsTable)
       .values({
         id: uploadId,
-        ownerId: DEMO_OWNER_ID,
+        ownerId: user.id,
         title: parsed.data.title,
         school: parsed.data.school,
         grade: parsed.data.grade,
@@ -698,7 +846,7 @@ router.post("/curricula/uploads", async (req, res): Promise<void> => {
       const students = await tx
         .select()
         .from(studentsTable)
-        .where(eq(studentsTable.ownerId, DEMO_OWNER_ID));
+        .where(eq(studentsTable.ownerId, user.id));
       const masteryRows = students
         .filter((student) => student.grade.includes("6"))
         .flatMap((student) =>
@@ -724,7 +872,9 @@ router.post("/curricula/uploads", async (req, res): Promise<void> => {
   );
 });
 
-router.get("/gmail/status", async (_req, res): Promise<void> => {
+router.get("/gmail/status", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
+  if (user.role !== "parent") { res.status(403).json({ error: "Only parents can access Gmail settings" }); return; }
   res.json(
     GetGmailStatusResponse.parse({
       connected: false,
@@ -738,6 +888,8 @@ router.get("/gmail/status", async (_req, res): Promise<void> => {
 });
 
 router.post("/gmail/sync", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
+  if (user.role !== "parent") { res.status(403).json({ error: "Only parents can sync Gmail" }); return; }
   const parsed = SyncGmailBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });

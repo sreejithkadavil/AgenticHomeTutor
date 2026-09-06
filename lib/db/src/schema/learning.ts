@@ -9,9 +9,18 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
+export const appUsersTable = pgTable("app_users", {
+  id: text("id").primaryKey(),
+  clerkSubject: text("clerk_subject").notNull().unique(),
+  role: text("role").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const studentsTable = pgTable("students", {
   id: text("id").primaryKey(),
   ownerId: text("owner_id").notNull(),
+  linkedUserId: text("linked_user_id"),
+  linkCodeHash: text("link_code_hash"),
   name: text("name").notNull(),
   grade: text("grade").notNull(),
   syllabus: text("syllabus").notNull(),

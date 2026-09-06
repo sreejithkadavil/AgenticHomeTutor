@@ -1,4 +1,5 @@
 import { Link, useLocation } from "wouter";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useActiveStudent } from "@/hooks/use-active-student";
 import { BookOpen, Brain, LayoutDashboard, Library, Settings, CalendarSync, FileText } from "lucide-react";
@@ -16,6 +17,12 @@ const navItems = [
 export function Shell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { student, isLoading } = useActiveStudent();
+  const [role, setRole] = useState<"parent" | "student" | null>(null);
+  useEffect(() => { fetch("/api/auth/me").then((response) => response.ok ? response.json() : null).then((data) => setRole(data?.user?.role ?? null)); }, []);
+  const visibleNavItems = role === "student" ? navItems.filter((item) => !["/materials", "/syllabus"].includes(item.href)) : navItems;
+  if (role === "student" && ["/materials", "/syllabus", "/settings"].includes(location)) {
+    return <main className="min-h-screen grid place-items-center p-6 text-center"><div><h1 className="text-2xl font-bold text-primary">This page is for parents</h1><Link href="/user-portal" className="mt-4 inline-block text-primary underline">Return to your learning portal</Link></div></main>;
+  }
 
   return (
     <div className="flex min-h-[100dvh] w-full bg-background text-foreground selection:bg-primary/20">
@@ -47,7 +54,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
 
           <nav className="flex flex-col gap-1.5 mt-2">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive = location === item.href;
               return (
                 <Link key={item.href} href={item.href} className={cn(
@@ -63,7 +70,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </nav>
         </div>
         
-        <div className="p-4 border-t border-border">
+        {role !== "student" && <div className="p-4 border-t border-border">
           <Link href="/settings" className={cn(
             "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium",
             location === "/settings" ? "bg-primary text-primary-foreground shadow-md" : "hover:bg-muted text-muted-foreground hover:text-foreground"
@@ -71,7 +78,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <Settings className="w-4 h-4" />
             Settings
           </Link>
-        </div>
+        </div>}
       </aside>
       
       <main className="flex-1 flex flex-col overflow-hidden relative bg-background/50">
@@ -81,7 +88,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-30 flex overflow-x-auto border-t border-border bg-card/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-4px_18px_rgba(31,42,68,0.08)] backdrop-blur md:hidden">
-        {[...navItems, { href: "/settings", label: "Settings", icon: Settings }].map((item) => {
+         {[...visibleNavItems, ...(role === "student" ? [] : [{ href: "/settings", label: "Settings", icon: Settings }])].map((item) => {
           const isActive = location === item.href;
           return (
             <Link

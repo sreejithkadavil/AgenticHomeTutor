@@ -232,6 +232,51 @@ export const CompleteStudySessionResponse = zod.object({
 
 
 /**
+ * @summary Create a short-lived OpenAI Realtime client secret for the linked student
+ */
+export const CreateRealtimeClientSecretBody = zod.object({
+  "studentId": zod.string(),
+  "sessionId": zod.string()
+})
+
+export const CreateRealtimeClientSecretResponse = zod.object({
+  "value": zod.string(),
+  "expiresAt": zod.number().int().nullable()
+})
+
+
+/**
+ * @summary Persist a completed Realtime tutor exchange and usage
+ */
+export const RecordRealtimeTurnParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+
+
+
+
+export const RecordRealtimeTurnBody = zod.object({
+  "studentTranscript": zod.string().min(1),
+  "assistantTranscript": zod.string().min(1),
+  "usage": zod.record(zod.string(), zod.unknown())
+})
+
+export const RecordRealtimeTurnResponse = zod.object({
+  "sessionId": zod.string(),
+  "response": zod.string(),
+  "responseType": zod.enum(['encourage', 'hint', 'explain', 'retest', 'complete']),
+  "evaluation": zod.enum(['correct', 'almost', 'incorrect', 'pending']),
+  "mastery": zod.number(),
+  "nextPrompt": zod.string(),
+  "nextPromptType": zod.enum(['explain', 'question', 'reflect']),
+  "turnCount": zod.number().int(),
+  "misconception": zod.string().nullable(),
+  "canUseVoice": zod.boolean()
+})
+
+
+/**
  * @summary Get Gmail connection and sync status
  */
 export const GetGmailStatusResponse = zod.object({

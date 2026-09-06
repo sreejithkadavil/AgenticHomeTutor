@@ -181,6 +181,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SessionSummary"
+  /realtime/client-secret:
+    post:
+      operationId: createRealtimeClientSecret
+      tags: [tutor]
+      summary: Create a short-lived OpenAI Realtime client secret for the linked student
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RealtimeClientSecretInput"
+      responses:
+        "200":
+          description: Ephemeral Realtime client secret
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RealtimeClientSecret"
+  /study-sessions/{sessionId}/realtime-turns:
+    post:
+      operationId: recordRealtimeTurn
+      tags: [tutor]
+      summary: Persist a completed Realtime tutor exchange and usage
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RealtimeTurnInput"
+      responses:
+        "200":
+          description: Persisted tutor turn
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TutorTurn"
   /gmail/status:
     get:
       operationId: getGmailStatus
@@ -440,6 +478,27 @@ components:
           type: [string, "null"]
         canUseVoice: { type: boolean }
       required: [sessionId, response, responseType, evaluation, mastery, nextPrompt, nextPromptType, turnCount, misconception, canUseVoice]
+    RealtimeClientSecretInput:
+      type: object
+      properties:
+        studentId: { type: string }
+        sessionId: { type: string }
+      required: [studentId, sessionId]
+    RealtimeClientSecret:
+      type: object
+      properties:
+        value: { type: string }
+        expiresAt: { type: [integer, "null"] }
+      required: [value, expiresAt]
+    RealtimeTurnInput:
+      type: object
+      properties:
+        studentTranscript: { type: string, minLength: 1 }
+        assistantTranscript: { type: string, minLength: 1 }
+        usage:
+          type: object
+          additionalProperties: true
+      required: [studentTranscript, assistantTranscript, usage]
     SessionSummary:
       type: object
       properties:

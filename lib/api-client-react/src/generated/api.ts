@@ -30,6 +30,9 @@ import type {
   GmailSyncInput,
   HealthStatus,
   Mastery,
+  RealtimeClientSecret,
+  RealtimeClientSecretInput,
+  RealtimeTurnInput,
   RevisionItem,
   SchoolMaterial,
   SessionSummary,
@@ -815,6 +818,149 @@ export const useCompleteStudySession = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCompleteStudySessionMutationOptions(options));
+    }
+
+export const getCreateRealtimeClientSecretUrl = () => {
+
+
+
+
+  return `/api/realtime/client-secret`
+}
+
+/**
+ * @summary Create a short-lived OpenAI Realtime client secret for the linked student
+ */
+export const createRealtimeClientSecret = async (realtimeClientSecretInput: RealtimeClientSecretInput, options?: Parameters<typeof customFetch>[1]): Promise<RealtimeClientSecret> => {
+
+  return customFetch<RealtimeClientSecret>(getCreateRealtimeClientSecretUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(realtimeClientSecretInput)
+  }
+);}
+
+
+
+
+
+export const getCreateRealtimeClientSecretMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRealtimeClientSecret>>, TError,{data: BodyType<RealtimeClientSecretInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createRealtimeClientSecret>>, TError,{data: BodyType<RealtimeClientSecretInput>}, TContext> => {
+
+const mutationKey = ['createRealtimeClientSecret'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createRealtimeClientSecret>>, {data: BodyType<RealtimeClientSecretInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createRealtimeClientSecret(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateRealtimeClientSecretMutationResult = NonNullable<Awaited<ReturnType<typeof createRealtimeClientSecret>>>
+    export type CreateRealtimeClientSecretMutationBody = BodyType<RealtimeClientSecretInput>
+    export type CreateRealtimeClientSecretMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a short-lived OpenAI Realtime client secret for the linked student
+ */
+export const useCreateRealtimeClientSecret = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRealtimeClientSecret>>, TError,{data: BodyType<RealtimeClientSecretInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createRealtimeClientSecret>>,
+        TError,
+        {data: BodyType<RealtimeClientSecretInput>},
+        TContext
+      > => {
+      return useMutation(getCreateRealtimeClientSecretMutationOptions(options));
+    }
+
+export const getRecordRealtimeTurnUrl = (sessionId: string,) => {
+
+
+
+
+  return `/api/study-sessions/${sessionId}/realtime-turns`
+}
+
+/**
+ * @summary Persist a completed Realtime tutor exchange and usage
+ */
+export const recordRealtimeTurn = async (sessionId: string,
+    realtimeTurnInput: RealtimeTurnInput, options?: Parameters<typeof customFetch>[1]): Promise<TutorTurn> => {
+
+  return customFetch<TutorTurn>(getRecordRealtimeTurnUrl(sessionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(realtimeTurnInput)
+  }
+);}
+
+
+
+
+
+export const getRecordRealtimeTurnMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordRealtimeTurn>>, TError,{sessionId: string;data: BodyType<RealtimeTurnInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof recordRealtimeTurn>>, TError,{sessionId: string;data: BodyType<RealtimeTurnInput>}, TContext> => {
+
+const mutationKey = ['recordRealtimeTurn'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recordRealtimeTurn>>, {sessionId: string;data: BodyType<RealtimeTurnInput>}> = (props) => {
+          const {sessionId,data} = props ?? {};
+
+          return  recordRealtimeTurn(sessionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecordRealtimeTurnMutationResult = NonNullable<Awaited<ReturnType<typeof recordRealtimeTurn>>>
+    export type RecordRealtimeTurnMutationBody = BodyType<RealtimeTurnInput>
+    export type RecordRealtimeTurnMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Persist a completed Realtime tutor exchange and usage
+ */
+export const useRecordRealtimeTurn = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordRealtimeTurn>>, TError,{sessionId: string;data: BodyType<RealtimeTurnInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof recordRealtimeTurn>>,
+        TError,
+        {sessionId: string;data: BodyType<RealtimeTurnInput>},
+        TContext
+      > => {
+      return useMutation(getRecordRealtimeTurnMutationOptions(options));
     }
 
 export const getGetGmailStatusUrl = () => {

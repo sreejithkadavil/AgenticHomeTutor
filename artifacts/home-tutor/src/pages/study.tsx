@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useActiveStudent } from "@/hooks/use-active-student";
-import { useSubmitTutorTurn, useCompleteStudySession } from "@workspace/api-client-react";
+import { useSubmitTutorTurn, useCompleteStudySession, useStartStudySession, useCreateRealtimeClientSecret, useRecordRealtimeTurn } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { Mic, Send, BrainCircuit, CheckCircle2, AlertCircle, ArrowRight, Loader2 } from "lucide-react";
+import { Mic, MicOff, Send, BrainCircuit, CheckCircle2, AlertCircle, Loader2, PhoneOff, VolumeX, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function Study() {
@@ -14,19 +14,29 @@ export default function Study() {
   const [, setLocation] = useLocation();
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
+  const [voiceState, setVoiceState] = useState<"idle" | "connecting" | "listening" | "speaking" | "error">("idle");
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionPrompt, setSessionPrompt] = useState<string | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [estimatedCostUsd, setEstimatedCostUsd] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState<{ student: string; assistant: string }>({ student: "", assistant: "" });
   const scrollRef = useRef<HTMLDivElement>(null);
+  const peerRef = useRef<RTCPeerConnection | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
+  const studentTranscriptRef = useRef("");
+  const assistantTranscriptRef = useRef("");
   
-  // Local state to hold the conversation flow since we don't have a GetSession endpoint
-  const [history, setHistory] = useState<{ role: 'tutor' | 'student', content: string, type?: string }[]>([
-    { role: 'tutor', content: "Hello! Let's review what we learned. What happens when you add 1/4 and 1/4?", type: "question" }
-  ]);
+  const [history, setHistory] = useState<{ role: 'tutor' | 'student', content: string, type?: string }[]>([]);
   const [mastery, setMastery] = useState(0.4);
   
   const submitTurn = useSubmitTutorTurn();
   const completeSession = useCompleteStudySession();
-  
-  // Dummy session ID for the MVP
-  const sessionId = "session-123";
+  const startSession = useStartStudySession();
+  const realtimeSecret = useCreateRealtimeClientSecret();
+  const recordRealtimeTurn = useRecordRealtimeTurn();
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -34,11 +44,31 @@ export default function Study() {
     }
   }, [history]);
 
+  useEffect(() => {
+    if (!student || sessionId || startSession.isPending) return;
+    startSession.mutate({ studentId: student.id, data: {} }, {
+      onSuccess: (session) => {
+        setSessionId(session.id); setSessionPrompt(session.objective);
+        setHistory([{ role: "tutor", content: session.prompt, type: session.promptType }]);
+      },
+    });
+  }, [student, sessionId, startSession]);
+
+  useEffect(() => () => {
+    peerRef.current?.close(); streamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
+
+  useEffect(() => {
+    if (!sessionId || elapsedSeconds >= 3600) return;
+    const timer = window.setInterval(() => setElapsedSeconds((seconds) => seconds + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [sessionId, elapsedSeconds]);
+
   if (!student) return null;
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!input.trim() || submitTurn.isPending) return;
+    if (!input.trim() || submitTurn.isPending || !sessionId) return;
 
     const userMessage = input;
     setInput("");
@@ -57,27 +87,84 @@ export default function Study() {
           setTimeout(() => handleComplete(), 2000);
         }
       },
-      onError: () => {
-        // Fallback for demo without backend
-        setTimeout(() => {
-          setHistory(prev => [...prev, { 
-            role: 'tutor', 
-            content: "That's a great start! 1/4 + 1/4 is indeed 2/4, which simplifies to 1/2. Can you explain why we don't add the bottom numbers (denominators)?",
-            type: "explain"
-          }]);
-          setMastery(0.6);
-        }, 1000);
-      }
+      onError: (error) => setHistory(prev => [...prev, { role: "tutor", content: error.message || "Your answer could not be saved. Please try again.", type: "explain" }])
     });
   };
 
   const handleComplete = () => {
+    if (!sessionId) return;
     completeSession.mutate({ sessionId }, {
       onSettled: () => {
-        setLocation("/dashboard");
+        setLocation("/user-portal");
       }
     });
   };
+  useEffect(() => {
+    if (elapsedSeconds >= 3600 && sessionId) { disconnectVoice(); handleComplete(); }
+  }, [elapsedSeconds, sessionId]);
+  const disconnectVoice = () => {
+    dataChannelRef.current?.close(); dataChannelRef.current = null;
+    peerRef.current?.close(); peerRef.current = null;
+    streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null;
+    setIsRecording(false); setVoiceState("idle");
+  };
+  const toggleMute = () => {
+    const next = !isMuted;
+    streamRef.current?.getAudioTracks().forEach((track) => { track.enabled = !next; });
+    setIsMuted(next);
+  };
+  const persistRealtimeExchange = (usage: Record<string, unknown>) => {
+    if (!sessionId || !studentTranscriptRef.current.trim() || !assistantTranscriptRef.current.trim()) return;
+    const studentTranscript = studentTranscriptRef.current.trim();
+    const assistantTranscript = assistantTranscriptRef.current.trim();
+    studentTranscriptRef.current = ""; assistantTranscriptRef.current = "";
+    setLiveTranscript({ student: "", assistant: "" });
+    setHistory((items) => [...items, { role: "student", content: studentTranscript }, { role: "tutor", content: assistantTranscript, type: "explain" }]);
+    recordRealtimeTurn.mutate({ sessionId, data: { studentTranscript, assistantTranscript, usage } }, { onSuccess: (turn) => setMastery(turn.mastery), onError: (error) => setVoiceError(error.message || "Voice transcript could not be saved.") });
+  };
+  const updateEstimatedCost = (usage: Record<string, unknown>) => {
+    const inputDetails = usage.input_token_details as Record<string, unknown> | undefined;
+    const outputDetails = usage.output_token_details as Record<string, unknown> | undefined;
+    const inputAudioTokens = typeof inputDetails?.audio_tokens === "number" ? inputDetails.audio_tokens : 0;
+    const outputAudioTokens = typeof outputDetails?.audio_tokens === "number" ? outputDetails.audio_tokens : 0;
+    setEstimatedCostUsd((current) => current + (inputAudioTokens * 10 + outputAudioTokens * 20) / 1_000_000);
+  };
+  const connectVoice = async () => {
+    if (!student || !sessionId) return;
+    try {
+      setVoiceError(null); setVoiceState("connecting");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const secret = await realtimeSecret.mutateAsync({ data: { studentId: student.id, sessionId } });
+      const peer = new RTCPeerConnection(); peerRef.current = peer;
+      stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+      const audio = new Audio(); audio.autoplay = true;
+      peer.ontrack = (event) => { audio.srcObject = event.streams[0]; setVoiceState("speaking"); };
+      const channel = peer.createDataChannel("oai-events"); dataChannelRef.current = channel;
+      channel.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data) as { type?: string; transcript?: string; response?: { usage?: Record<string, unknown> } };
+          if (message.type === "conversation.item.input_audio_transcription.completed" && message.transcript) { studentTranscriptRef.current += `${studentTranscriptRef.current ? " " : ""}${message.transcript}`; setLiveTranscript((value) => ({ ...value, student: studentTranscriptRef.current })); }
+          if (message.type === "response.output_audio_transcript.done" && message.transcript) { assistantTranscriptRef.current += `${assistantTranscriptRef.current ? " " : ""}${message.transcript}`; setLiveTranscript((value) => ({ ...value, assistant: assistantTranscriptRef.current })); }
+          if (message.type === "input_audio_buffer.speech_started") { channel.send(JSON.stringify({ type: "response.cancel" })); setVoiceState("listening"); }
+          if (message.type === "response.done") {
+            const usage = message.response?.usage ?? {};
+            setVoiceState("listening");
+            updateEstimatedCost(usage);
+            persistRealtimeExchange(usage);
+          }
+        } catch { setVoiceError("Received an unreadable voice event."); }
+      };
+      const offer = await peer.createOffer(); await peer.setLocalDescription(offer);
+      const response = await fetch("https://api.openai.com/v1/realtime/calls", { method: "POST", headers: { Authorization: `Bearer ${secret.value}`, "Content-Type": "application/sdp" }, body: offer.sdp });
+      if (!response.ok) throw new Error("Voice connection was rejected");
+      await peer.setRemoteDescription({ type: "answer", sdp: await response.text() });
+      setVoiceState("listening"); setIsRecording(true);
+    } catch (error) {
+      disconnectVoice(); setVoiceState("error"); setVoiceError(error instanceof Error ? error.message : "Microphone or voice connection failed");
+    }
+  };
+  const reconnectVoice = () => { disconnectVoice(); window.setTimeout(() => { void connectVoice(); }, 150); };
 
   return (
     <div className="max-w-4xl mx-auto h-[calc(100vh-8rem)] flex flex-col">
@@ -85,7 +172,7 @@ export default function Study() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-primary font-serif">Active Session</h1>
-          <p className="text-sm text-muted-foreground mt-1">Goal: Improve understanding and correct misconceptions.</p>
+          <p className="text-sm text-muted-foreground mt-1">Goal: {sessionPrompt ?? "Preparing your learning objective."}</p>
         </div>
         <div className="flex items-center gap-4 text-sm font-medium">
           <div className="flex flex-col items-end gap-1">
@@ -96,6 +183,10 @@ export default function Study() {
                 style={{ width: `${mastery * 100}%` }}
               />
             </div>
+          </div>
+          <div className="text-right text-xs text-muted-foreground">
+            <span className="block tabular-nums">{String(Math.floor(elapsedSeconds / 60)).padStart(2, "0")}:{String(elapsedSeconds % 60).padStart(2, "0")}</span>
+            <span className="block tabular-nums" title="Estimated from reported Realtime audio tokens">Est. ₹{(estimatedCostUsd * 96).toFixed(2)}</span>
           </div>
           <Button variant="outline" size="sm" onClick={handleComplete} disabled={completeSession.isPending}>
             End Session
@@ -158,6 +249,7 @@ export default function Study() {
               </div>
             </div>
           )}
+          {(liveTranscript.student || liveTranscript.assistant) && <div className="space-y-2 rounded-xl border border-dashed border-primary/30 bg-primary/5 p-4 text-sm"><p className="font-semibold text-primary">Live voice transcript</p>{liveTranscript.student && <p><span className="font-medium">You: </span>{liveTranscript.student}</p>}{liveTranscript.assistant && <p><span className="font-medium">Tutor: </span>{liveTranscript.assistant}</p>}</div>}
         </div>
 
         {/* Input Area */}
@@ -171,11 +263,14 @@ export default function Study() {
               variant={isRecording ? "destructive" : "outline"} 
               size="icon" 
               className={cn("shrink-0 rounded-full h-12 w-12", isRecording && "animate-pulse shadow-lg shadow-destructive/20")}
-              onClick={() => setIsRecording(!isRecording)}
-              title="Use Voice"
+              onClick={isRecording ? disconnectVoice : connectVoice}
+              disabled={!sessionId || voiceState === "connecting"}
+              title={isRecording ? "Disconnect voice" : "Connect voice"}
             >
-              <Mic className="w-5 h-5" />
+              {isRecording ? <MicOff className="w-5 h-5" /> : voiceState === "connecting" ? <Loader2 className="w-5 h-5 animate-spin" /> : <Mic className="w-5 h-5" />}
             </Button>
+            {isRecording && <><Button type="button" variant="outline" size="icon" onClick={toggleMute} title={isMuted ? "Unmute microphone" : "Mute microphone"}>{isMuted ? <MicOff className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}</Button><Button type="button" variant="outline" size="icon" onClick={disconnectVoice} title="Disconnect voice"><PhoneOff className="w-4 h-4" /></Button></>}
+            {voiceState === "error" && <Button type="button" variant="outline" size="icon" onClick={reconnectVoice} title="Reconnect voice"><RotateCcw className="w-4 h-4" /></Button>}
             
             <div className="relative flex-1">
               <Textarea 
@@ -202,7 +297,7 @@ export default function Study() {
             </div>
           </form>
           <div className="text-center mt-3 text-xs text-muted-foreground font-medium">
-            Shift + Enter for new line • Enter to send
+            {voiceError ? voiceError : voiceState === "listening" ? "Voice connected and listening. You can still type." : "Shift + Enter for new line • Enter to send"}
           </div>
         </div>
       </Card>

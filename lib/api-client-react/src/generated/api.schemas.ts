@@ -221,6 +221,27 @@ export interface TutorTurn {
   canUseVoice: boolean;
 }
 
+export interface RealtimeClientSecretInput {
+  studentId: string;
+  sessionId: string;
+}
+
+export interface RealtimeClientSecret {
+  value: string;
+  /** @nullable */
+  expiresAt: number | null;
+}
+
+export type RealtimeTurnInputUsage = { [key: string]: unknown };
+
+export interface RealtimeTurnInput {
+  /** @minLength 1 */
+  studentTranscript: string;
+  /** @minLength 1 */
+  assistantTranscript: string;
+  usage: RealtimeTurnInputUsage;
+}
+
 export interface SessionSummary {
   sessionId: string;
   topic: string;

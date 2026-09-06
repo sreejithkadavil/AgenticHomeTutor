@@ -16,6 +16,7 @@ export default function Settings() {
 
   const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState({ name: "", grade: "", syllabus: "" });
+  const [linkCode, setLinkCode] = useState<string | null>(null);
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,6 +29,12 @@ export default function Settings() {
         setFormData({ name: "", grade: "", syllabus: "" });
       }
     });
+  };
+  const generateLinkCode = async (studentId: string) => {
+    const response = await fetch(`/api/students/${studentId}/link-code`, { method: "POST" });
+    if (!response.ok) { toast({ title: "Could not create a link code", description: "Please try again.", variant: "destructive" }); return; }
+    const data = await response.json() as { code: string };
+    setLinkCode(data.code);
   };
 
   if (isLoading) {
@@ -65,8 +72,10 @@ export default function Settings() {
                 </div>
               </div>
               <Button variant="outline" size="sm">Edit Profile</Button>
+              <Button variant="outline" size="sm" onClick={() => generateLinkCode(student.id)}>Generate Link Code</Button>
             </Card>
           ))}
+          {linkCode && <Card className="border-primary/30 bg-primary/5 p-4"><CardTitle className="text-base">One-time student link code</CardTitle><p className="mt-2 font-mono text-lg tracking-wider text-primary">{linkCode}</p><CardDescription className="mt-2">Share this code privately. It is invalid immediately after one student redeems it or when you generate another code.</CardDescription></Card>}
 
           {!isCreating && (
             <Button 
