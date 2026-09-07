@@ -296,7 +296,8 @@ function CurriculumBrowser() {
 }
 
 const PLAIN_TEXT_EXTENSIONS = [".txt", ".csv", ".json"];
-const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+const MAX_PDF_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_IMAGE_UPLOAD_BYTES = 8 * 1024 * 1024;
 
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -314,6 +315,7 @@ function SyllabusImport() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isExtractingPdf, setIsExtractingPdf] = useState(false);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -345,20 +347,34 @@ function SyllabusImport() {
       return;
     }
 
-    if (file.size > MAX_UPLOAD_BYTES) {
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const maxBytes = isPdf ? MAX_PDF_UPLOAD_BYTES : MAX_IMAGE_UPLOAD_BYTES;
+    if (file.size > maxBytes) {
       toast({
         title: "File too large",
-        description: "Please upload a PDF or photo under 8MB.",
+        description: isPdf ? "Please upload a PDF no larger than 50MB." : "Please upload a photo under 8MB.",
         variant: "destructive"
       });
       return;
     }
 
     try {
-      const contentBase64 = await readFileAsBase64(file);
-      const result = await extractText.mutateAsync({
-        data: { fileName: file.name, mimeType: file.type || "application/octet-stream", contentBase64 },
-      });
+      if (isPdf) setIsExtractingPdf(true);
+      const result = isPdf
+        ? await fetch("/api/curricula/extract-file", {
+            method: "POST",
+            headers: { "Content-Type": "application/pdf" },
+            body: file,
+          }).then(async (response) => {
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || "Could not read this PDF.");
+            return payload as { text: string };
+          })
+        : await readFileAsBase64(file).then((contentBase64) =>
+            extractText.mutateAsync({
+              data: { fileName: file.name, mimeType: file.type || "application/octet-stream", contentBase64 },
+            }),
+          );
       setFormData(prev => ({ ...prev, fileName: file.name, contentText: result.text }));
       toast({
         title: "Text extracted",
@@ -370,6 +386,8 @@ function SyllabusImport() {
         description: err instanceof Error ? err.message : "Please try a different file or paste the content directly.",
         variant: "destructive"
       });
+    } finally {
+      if (isPdf) setIsExtractingPdf(false);
     }
   };
 
@@ -489,7 +507,7 @@ function SyllabusImport() {
                       className="hidden"
                       ref={fileInputRef}
                       onChange={handleFileChange}
-                      disabled={extractText.isPending}
+                      disabled={extractText.isPending || isExtractingPdf}
                     />
                     <Button
                       type="button"
@@ -497,14 +515,14 @@ function SyllabusImport() {
                       size="sm"
                       className="h-8 text-xs font-medium bg-muted/30"
                       onClick={() => fileInputRef.current?.click()}
-                      disabled={extractText.isPending}
+                      disabled={extractText.isPending || isExtractingPdf}
                     >
-                      {extractText.isPending ? (
+                      {extractText.isPending || isExtractingPdf ? (
                         <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
                       ) : (
                         <UploadCloud className="w-3.5 h-3.5 mr-1.5" />
                       )}
-                      {extractText.isPending ? "Reading file…" : "Upload File"}
+                      {extractText.isPending || isExtractingPdf ? "Reading file…" : "Upload File"}
                     </Button>
                   </div>
                 </div>

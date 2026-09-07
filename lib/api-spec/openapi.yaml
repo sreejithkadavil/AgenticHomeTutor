@@ -316,6 +316,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExtractMaterialTextResult"
+  /curricula/extract-file:
+    post:
+      operationId: extractCurriculumPdf
+      tags: [curriculum]
+      summary: Extract plain text from a parent-uploaded PDF up to 50 MB
+      requestBody:
+        required: true
+        content:
+          application/pdf:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Extracted text
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractMaterialTextResult"
 components:
   parameters:
     StudentId:

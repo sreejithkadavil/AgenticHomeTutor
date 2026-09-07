@@ -56,7 +56,7 @@ import {
   gradeTutorAnswer,
   TutorGradingUnavailableError,
 } from "../lib/tutorGrading";
-import { extractMaterialText, MaterialExtractionError } from "../lib/materialExtraction";
+import { extractMaterialText, extractPdfMaterial, MaterialExtractionError } from "../lib/materialExtraction";
 
 const router: IRouter = Router();
 let curriculumSeedPromise: Promise<void> | null = null;
@@ -1102,6 +1102,26 @@ router.post("/curricula/extract-text", async (req, res): Promise<void> => {
     }
     req.log.error({ err: error }, "Material text extraction failed");
     res.status(502).json({ error: "Unable to read this file right now. Please try again." });
+  }
+});
+
+router.post("/curricula/extract-file", async (req, res): Promise<void> => {
+  const user = await currentUser(req, res); if (!user) return;
+  if (user.role !== "parent") { res.status(403).json({ error: "Only parents can extract material text" }); return; }
+  if (!Buffer.isBuffer(req.body)) {
+    res.status(400).json({ error: "Upload a PDF file." });
+    return;
+  }
+  try {
+    const text = await extractPdfMaterial(req.body);
+    res.json(ExtractCurriculumMaterialTextResponse.parse({ text }));
+  } catch (error) {
+    if (error instanceof MaterialExtractionError) {
+      res.status(422).json({ error: error.message });
+      return;
+    }
+    req.log.error({ err: error }, "PDF text extraction failed");
+    res.status(502).json({ error: "Unable to read this PDF right now. Please try again." });
   }
 });
 

@@ -1409,3 +1409,74 @@ export const useExtractCurriculumMaterialText = <TError = ErrorType<unknown>,
       return useMutation(getExtractCurriculumMaterialTextMutationOptions(options));
     }
 
+export const getExtractCurriculumPdfUrl = () => {
+
+
+
+
+  return `/api/curricula/extract-file`
+}
+
+/**
+ * @summary Extract plain text from a parent-uploaded PDF up to 50 MB
+ */
+export const extractCurriculumPdf = async (extractCurriculumPdfBody: Blob, options?: Parameters<typeof customFetch>[1]): Promise<ExtractMaterialTextResult> => {
+
+  return customFetch<ExtractMaterialTextResult>(getExtractCurriculumPdfUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/pdf', ...options?.headers },
+    body: extractCurriculumPdfBody
+  }
+);}
+
+
+
+
+
+export const getExtractCurriculumPdfMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof extractCurriculumPdf>>, TError,{data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof extractCurriculumPdf>>, TError,{data: BodyType<Blob>}, TContext> => {
+
+const mutationKey = ['extractCurriculumPdf'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof extractCurriculumPdf>>, {data: BodyType<Blob>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  extractCurriculumPdf(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ExtractCurriculumPdfMutationResult = NonNullable<Awaited<ReturnType<typeof extractCurriculumPdf>>>
+    export type ExtractCurriculumPdfMutationBody = BodyType<Blob>
+    export type ExtractCurriculumPdfMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Extract plain text from a parent-uploaded PDF up to 50 MB
+ */
+export const useExtractCurriculumPdf = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof extractCurriculumPdf>>, TError,{data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof extractCurriculumPdf>>,
+        TError,
+        {data: BodyType<Blob>},
+        TContext
+      > => {
+      return useMutation(getExtractCurriculumPdfMutationOptions(options));
+    }
+

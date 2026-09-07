@@ -2,7 +2,8 @@ import { PDFParse } from "pdf-parse";
 
 export class MaterialExtractionError extends Error {}
 
-const MAX_CONTENT_BYTES = 8 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+export const MAX_PDF_BYTES = 50 * 1024 * 1024;
 const VISION_MODEL = process.env.OPENAI_VISION_MODEL || "gpt-4o-mini";
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
@@ -77,6 +78,16 @@ export interface ExtractMaterialInput {
   contentBase64: string;
 }
 
+export async function extractPdfMaterial(buffer: Buffer): Promise<string> {
+  if (buffer.byteLength === 0) {
+    throw new MaterialExtractionError("The uploaded PDF is empty.");
+  }
+  if (buffer.byteLength > MAX_PDF_BYTES) {
+    throw new MaterialExtractionError("This PDF is too large (max 50MB).");
+  }
+  return extractPdfText(buffer);
+}
+
 /**
  * Turns a parent-uploaded PDF or photo of school notes into plain text that
  * can be reviewed and imported as curriculum content — the syllabus importer
@@ -93,15 +104,15 @@ export async function extractMaterialText(input: ExtractMaterialInput): Promise<
   if (buffer.byteLength === 0) {
     throw new MaterialExtractionError("The uploaded file is empty.");
   }
-  if (buffer.byteLength > MAX_CONTENT_BYTES) {
+  const mimeType = input.mimeType.toLowerCase();
+  const fileName = input.fileName.toLowerCase();
+  const isPdf = mimeType === "application/pdf" || fileName.endsWith(".pdf");
+  if (buffer.byteLength > (isPdf ? MAX_PDF_BYTES : MAX_IMAGE_BYTES)) {
     throw new MaterialExtractionError("This file is too large (max 8MB). Try a smaller file or a lower-resolution photo.");
   }
 
-  const mimeType = input.mimeType.toLowerCase();
-  const fileName = input.fileName.toLowerCase();
-
-  if (mimeType === "application/pdf" || fileName.endsWith(".pdf")) {
-    return extractPdfText(buffer);
+  if (isPdf) {
+    return extractPdfMaterial(buffer);
   }
   if (mimeType.startsWith("image/")) {
     return extractImageText(input.contentBase64, input.mimeType);

@@ -430,3 +430,11 @@ export const ExtractCurriculumMaterialTextResponse = zod.object({
 })
 
 
+/**
+ * @summary Extract plain text from a parent-uploaded PDF up to 50 MB
+ */
+export const ExtractCurriculumPdfResponse = zod.object({
+  "text": zod.string()
+})
+
+
