@@ -165,19 +165,36 @@ export default function Study() {
       const peer = new RTCPeerConnection(); peerRef.current = peer;
       stream.getTracks().forEach((track) => peer.addTrack(track, stream));
       const audio = new Audio(); audio.autoplay = true;
-      peer.ontrack = (event) => { audio.srcObject = event.streams[0]; setVoiceState("speaking"); };
+      peer.ontrack = (event) => {
+        audio.srcObject = event.streams[0];
+        setVoiceState("speaking");
+        // Some browsers don't reliably start playback from the `autoplay`
+        // property alone on a dynamically created, unattached <audio>
+        // element — call play() explicitly and surface a failure instead
+        // of leaving the student staring at a silently stuck connection.
+        void audio.play().catch((error) => {
+          setVoiceError(error instanceof Error ? `Could not play the tutor's voice: ${error.message}` : "Could not play the tutor's voice.");
+        });
+      };
       const channel = peer.createDataChannel("oai-events"); dataChannelRef.current = channel;
       channel.onmessage = (event) => {
         try {
-          const message = JSON.parse(event.data) as { type?: string; transcript?: string; response?: { usage?: Record<string, unknown> } };
+          const message = JSON.parse(event.data) as { type?: string; transcript?: string; response?: { usage?: Record<string, unknown> }; error?: { message?: string; code?: string } };
           if (message.type === "conversation.item.input_audio_transcription.completed" && message.transcript) { studentTranscriptRef.current += `${studentTranscriptRef.current ? " " : ""}${message.transcript}`; setLiveTranscript((value) => ({ ...value, student: studentTranscriptRef.current })); }
           if (message.type === "response.output_audio_transcript.done" && message.transcript) { assistantTranscriptRef.current += `${assistantTranscriptRef.current ? " " : ""}${message.transcript}`; setLiveTranscript((value) => ({ ...value, assistant: assistantTranscriptRef.current })); }
-          if (message.type === "input_audio_buffer.speech_started") { channel.send(JSON.stringify({ type: "response.cancel" })); setVoiceState("listening"); }
+          // Interruption is handled entirely server-side (turn_detection.interrupt_response
+          // on the session) — sending our own response.cancel here as well used to race
+          // with that, occasionally clipping the tutor's next response instead of the one
+          // being interrupted. Just reflect the state locally.
+          if (message.type === "input_audio_buffer.speech_started") { setVoiceState("listening"); }
           if (message.type === "response.done") {
             const usage = message.response?.usage ?? {};
             setVoiceState("listening");
             updateEstimatedCost(usage);
             persistRealtimeExchange(usage);
+          }
+          if (message.type === "error") {
+            setVoiceError(message.error?.message || "The voice tutor reported an error.");
           }
         } catch { setVoiceError("Received an unreadable voice event."); }
       };

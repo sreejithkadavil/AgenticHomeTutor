@@ -1010,6 +1010,14 @@ router.post("/realtime/client-secret", async (req, res): Promise<void> => {
             type: "server_vad",
             create_response: true,
             interrupt_response: true,
+            // Defaults are tuned for a quiet room; a home study session has
+            // background noise (siblings, TV, the mic picking up the
+            // tutor's own voice) that can false-trigger "speech started"
+            // and interrupt the tutor mid-sentence. Raise the threshold and
+            // require a bit more silence before treating a turn as over.
+            threshold: 0.6,
+            prefix_padding_ms: 300,
+            silence_duration_ms: 600,
           },
         },
         output: { voice: "marin" },
