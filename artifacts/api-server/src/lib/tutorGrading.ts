@@ -254,3 +254,68 @@ export async function gradeTutorAnswer(input: GradeInput): Promise<GradeResult> 
   }
   return result;
 }
+
+export interface ExtractedObjective {
+  subject: string;
+  strand: string;
+  topic: string;
+  objective: string;
+}
+
+const MAX_EXTRACTION_INPUT_CHARS = 60_000;
+const MAX_EXTRACTED_OBJECTIVES = 40;
+
+/**
+ * Turns freeform text — a pasted syllabus, or text extracted from a photo or
+ * PDF of school notes or a textbook — into a bounded list of real,
+ * assessable curriculum objectives. Replaces a "treat every line as an
+ * objective" heuristic that produces noise on actual prose (textbook
+ * paragraphs, publisher front matter, picture captions) rather than a
+ * pre-formatted objective list.
+ */
+export async function extractObjectivesFromContent(input: {
+  defaultSubject: string;
+  defaultTerm: string;
+  contentText: string;
+}): Promise<ExtractedObjective[]> {
+  const excerpt = input.contentText.slice(0, MAX_EXTRACTION_INPUT_CHARS);
+  const systemPrompt = [
+    "You are helping a parent import school syllabus or textbook content into a curriculum tracker for their child.",
+    `If the text doesn't say otherwise, assume the subject is "${input.defaultSubject}" and the term is "${input.defaultTerm}".`,
+    "Read the text and list the distinct topics or lessons it actually teaches as real, assessable learning objectives (e.g. 'Explain how the digestive system breaks down food during digestion') — not chapter titles alone, and not a summary of the whole document.",
+    "Ignore front matter, publisher marketing, tables of contents, indexes, page headers/footers, and anything that isn't teaching content.",
+    `Return at most ${MAX_EXTRACTED_OBJECTIVES} objectives, one entry per distinct topic — fewer is fine if the text doesn't cover that many. If the text has no real teaching content at all, return an empty list.`,
+  ].join("\n");
+
+  const result = await callGradingModel<{ objectives: ExtractedObjective[] }>(
+    systemPrompt,
+    excerpt,
+    "extracted_curriculum_objectives",
+    {
+      type: "object",
+      properties: {
+        objectives: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              subject: { type: "string" },
+              strand: { type: "string" },
+              topic: { type: "string" },
+              objective: { type: "string" },
+            },
+            required: ["subject", "strand", "topic", "objective"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["objectives"],
+      additionalProperties: false,
+    },
+  );
+
+  if (!Array.isArray(result.objectives)) {
+    throw new TutorGradingUnavailableError("Objective extraction returned an unexpected shape");
+  }
+  return result.objectives.slice(0, MAX_EXTRACTED_OBJECTIVES);
+}

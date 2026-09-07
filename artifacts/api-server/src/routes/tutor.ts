@@ -52,6 +52,7 @@ import {
 import {
   classifyTutorAnswer,
   explainObjective,
+  extractObjectivesFromContent,
   generateExerciseQuestion,
   gradeTutorAnswer,
   TutorGradingUnavailableError,
@@ -194,12 +195,12 @@ function inferMaterialKind(fileName?: string | null): string {
   return extension && extension.length <= 5 ? extension : "Text";
 }
 
-function parseImportedObjectives(input: {
+async function parseImportedObjectives(input: {
   subject: string;
   term: string;
   contentText: string;
   fileName?: string | null;
-}): Omit<Class6Objective, "color">[] {
+}): Promise<Omit<Class6Objective, "color">[]> {
   let rawItems: unknown[] = [];
   if (input.fileName?.toLowerCase().endsWith(".json")) {
     try {
@@ -211,6 +212,24 @@ function parseImportedObjectives(input: {
           : [];
     } catch {
       rawItems = [];
+    }
+  }
+
+  if (!rawItems.length) {
+    // Prefer having an LLM identify the actual topics/objectives in the
+    // text — a naive "every line is an objective" heuristic works for a
+    // pre-formatted list a parent typed, but produces noise on real prose
+    // (a pasted paragraph, or text extracted from a textbook/photo). Fall
+    // back to the heuristic below if extraction is unavailable or fails.
+    try {
+      const extracted = await extractObjectivesFromContent({
+        defaultSubject: input.subject,
+        defaultTerm: input.term,
+        contentText: input.contentText,
+      });
+      if (extracted.length) rawItems = extracted;
+    } catch {
+      // fall through to the heuristic
     }
   }
 
@@ -1183,7 +1202,7 @@ router.post("/curricula/uploads", async (req, res): Promise<void> => {
   }
 
   const uploadId = randomUUID();
-  const importedObjectives = parseImportedObjectives(parsed.data);
+  const importedObjectives = await parseImportedObjectives(parsed.data);
   const [upload] = await db.transaction(async (tx) => {
     const [created] = await tx
       .insert(curriculumUploadsTable)
