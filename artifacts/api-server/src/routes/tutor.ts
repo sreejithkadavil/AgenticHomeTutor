@@ -279,7 +279,14 @@ async function parseImportedObjectives(input: {
  * session only ever moves within the subject the student/parent picked it
  * for; it completes once that subject is exhausted rather than wandering.
  */
-async function selectNextObjective(studentId: string, subject: string, excludeObjectiveIds: string[]) {
+async function selectNextObjective(studentId: string, grade: string, subject: string, excludeObjectiveIds: string[]) {
+  // Student creation no longer pre-seeds a mastery row for every objective —
+  // only the objective actually started gets one, lazily. Querying FROM
+  // masteryTable (inner join) would only ever see objectives this student
+  // has already touched, so a never-touched objective could never be picked
+  // as "next" — the session would always stop after one. Query FROM
+  // objectivesTable with a left join instead, treating a missing mastery
+  // row the same as a fresh mastery: 0.
   const candidates = await db
     .select({
       objectiveId: objectivesTable.id,
@@ -288,11 +295,18 @@ async function selectNextObjective(studentId: string, subject: string, excludeOb
       objective: objectivesTable.objective,
       mastery: masteryTable.mastery,
     })
-    .from(masteryTable)
-    .innerJoin(objectivesTable, eq(masteryTable.objectiveId, objectivesTable.id))
-    .where(and(eq(masteryTable.studentId, studentId), eq(objectivesTable.subject, subject)))
-    .orderBy(asc(masteryTable.mastery));
-  return candidates.find((candidate) => !excludeObjectiveIds.includes(candidate.objectiveId)) ?? null;
+    .from(objectivesTable)
+    .leftJoin(
+      masteryTable,
+      and(
+        eq(masteryTable.objectiveId, objectivesTable.id),
+        eq(masteryTable.studentId, studentId),
+      ),
+    )
+    .where(and(eq(objectivesTable.grade, grade), eq(objectivesTable.subject, subject)));
+  const remaining = candidates.filter((candidate) => !excludeObjectiveIds.includes(candidate.objectiveId));
+  remaining.sort((a, b) => (a.mastery ?? 0) - (b.mastery ?? 0));
+  return remaining[0] ?? null;
 }
 
 router.get("/dashboard", async (req, res): Promise<void> => {
@@ -878,6 +892,11 @@ router.post(
     let currentSubject = row.objective.subject;
     let currentTopic = row.objective.topic;
     let currentObjectiveText = row.objective.objective;
+    // Set when advancing to an objective the student has never touched
+    // before, so its mastery row can be created in the same transaction —
+    // without it, the very next turn's mastery join would find nothing and
+    // 404 as if the session didn't exist.
+    let newObjectiveIdNeedingMastery: string | null = null;
 
     if (evaluation === "correct" && row.session.exercisePending) {
       // The student just passed an exam/exercise-style question on this
@@ -885,7 +904,7 @@ router.post(
       const covered = objectivesCovered.includes(row.session.objectiveId)
         ? objectivesCovered
         : [...objectivesCovered, row.session.objectiveId];
-      const next = await selectNextObjective(row.session.studentId, row.objective.subject, covered);
+      const next = await selectNextObjective(row.session.studentId, canonicalGrade(row.student.grade), row.objective.subject, covered);
       if (!next) {
         responseType = "complete";
       } else {
@@ -904,6 +923,7 @@ router.post(
           currentSubject = next.subject;
           currentTopic = next.topic;
           currentObjectiveText = next.objective;
+          if (next.mastery == null) newObjectiveIdNeedingMastery = next.objectiveId;
         } catch (error) {
           req.log.warn({ err: error }, "Could not introduce the next objective; staying on the current one");
         }
@@ -930,6 +950,28 @@ router.post(
     // so a later correct answer earns a fresh exercise question.
 
     await db.transaction(async (tx) => {
+      if (newObjectiveIdNeedingMastery) {
+        const [existingMastery] = await tx
+          .select({ id: masteryTable.id })
+          .from(masteryTable)
+          .where(
+            and(
+              eq(masteryTable.studentId, row.session.studentId),
+              eq(masteryTable.objectiveId, newObjectiveIdNeedingMastery),
+            ),
+          )
+          .limit(1);
+        if (!existingMastery) {
+          await tx.insert(masteryTable).values({
+            id: randomUUID(),
+            studentId: row.session.studentId,
+            objectiveId: newObjectiveIdNeedingMastery,
+            mastery: 0,
+            trend: "steady",
+            lastPracticed: "Not started",
+          });
+        }
+      }
       await tx
         .update(sessionsTable)
         .set({ turnCount, currentPrompt: nextPromptText, objectiveId: nextObjectiveId, objectivesCovered, exercisePending })

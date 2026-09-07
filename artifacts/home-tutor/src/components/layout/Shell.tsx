@@ -6,7 +6,7 @@ import { BookOpen, Brain, LayoutDashboard, Library, Settings, CalendarSync, File
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/user-portal", label: "Dashboard", icon: LayoutDashboard },
   { href: "/study", label: "Study", icon: Brain },
   { href: "/progress", label: "Progress", icon: BookOpen },
   { href: "/materials", label: "Materials", icon: Library },

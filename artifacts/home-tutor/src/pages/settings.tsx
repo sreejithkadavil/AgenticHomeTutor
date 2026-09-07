@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
@@ -15,7 +16,7 @@ export default function Settings() {
   const { toast } = useToast();
 
   const [isCreating, setIsCreating] = useState(false);
-  const [formData, setFormData] = useState({ name: "", grade: "", syllabus: "" });
+  const [formData, setFormData] = useState({ name: "", grade: "Grade 6", syllabus: "" });
   const [linkCode, setLinkCode] = useState<string | null>(null);
 
   const handleCreate = (e: React.FormEvent) => {
@@ -102,7 +103,15 @@ export default function Settings() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="grade">Grade Level</Label>
-                      <Input id="grade" required value={formData.grade} onChange={e => setFormData(p => ({...p, grade: e.target.value}))} placeholder="e.g. 4th Grade" />
+                      <Select value={formData.grade} onValueChange={value => setFormData(p => ({...p, grade: value}))}>
+                        <SelectTrigger id="grade">
+                          <SelectValue placeholder="Select a grade" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Grade 6">Grade 6</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">Grade 6 is the only curriculum available right now.</p>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="syllabus">Syllabus / Curriculum</Label>
