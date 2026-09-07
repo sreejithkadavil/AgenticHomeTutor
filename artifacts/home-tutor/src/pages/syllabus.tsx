@@ -421,10 +421,12 @@ function SyllabusImport() {
             fileName: null
           });
         },
-        onError: () => {
+        onError: (error) => {
           toast({
             title: "Import Failed",
-            description: "There was an error processing your syllabus.",
+            description: error instanceof Error
+              ? error.message
+              : "There was an error processing your syllabus.",
             variant: "destructive"
           });
         }

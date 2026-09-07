@@ -42,6 +42,9 @@ app.post(
 );
 // Photo extraction still uses the existing base64 JSON contract.
 app.post("/api/curricula/extract-text", express.json({ limit: "12mb" }));
+// Extracted text from a large syllabus PDF can exceed Express's default
+// 100 KB JSON limit. Keep the larger parser isolated to curriculum imports.
+app.post("/api/curricula/uploads", express.json({ limit: "10mb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(
