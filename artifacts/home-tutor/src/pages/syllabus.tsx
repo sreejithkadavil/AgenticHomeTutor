@@ -6,7 +6,8 @@ import {
   useListCurriculumUploads,
   useCreateCurriculumUpload,
   useExtractCurriculumMaterialText,
-  getListCurriculumUploadsQueryKey
+  getListCurriculumUploadsQueryKey,
+  getGetClass6CurriculumQueryKey,
 } from "@workspace/api-client-react";
 import { useActiveStudent } from "@/hooks/use-active-student";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -407,6 +408,7 @@ function SyllabusImport() {
       {
         onSuccess: (result) => {
           queryClient.invalidateQueries({ queryKey: getListCurriculumUploadsQueryKey() });
+          queryClient.invalidateQueries({ queryKey: getGetClass6CurriculumQueryKey() });
           toast({
             title: "Syllabus Imported Successfully",
             description: `Imported ${result.importedObjectives.length} objectives from "${result.upload.title}".`,

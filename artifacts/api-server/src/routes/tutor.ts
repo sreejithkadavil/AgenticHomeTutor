@@ -1215,7 +1215,82 @@ router.post("/study-sessions/:sessionId/realtime-turns", async (req, res): Promi
 
 router.get("/curricula/class-6", async (req, res): Promise<void> => {
   const user = await currentUser(req, res); if (!user) return;
-  res.json(GetClass6CurriculumResponse.parse(class6Curriculum));
+
+  let curriculumOwnerId: string | null = user.role === "parent" ? user.id : null;
+  if (user.role === "student") {
+    const [linkedStudent] = await db
+      .select({ ownerId: studentsTable.ownerId })
+      .from(studentsTable)
+      .where(eq(studentsTable.linkedUserId, user.id))
+      .limit(1);
+    curriculumOwnerId = linkedStudent?.ownerId ?? null;
+  }
+
+  const importedRows = curriculumOwnerId
+    ? await db
+        .select({
+          id: objectivesTable.id,
+          subject: objectivesTable.subject,
+          strand: objectivesTable.strand,
+          topic: objectivesTable.topic,
+          objective: objectivesTable.objective,
+          term: objectivesTable.term,
+          sequence: objectivesTable.sequence,
+          sourceTitle: curriculumUploadsTable.title,
+        })
+        .from(objectivesTable)
+        .innerJoin(
+          curriculumUploadsTable,
+          eq(objectivesTable.sourceId, curriculumUploadsTable.id),
+        )
+        .where(
+          and(
+            eq(curriculumUploadsTable.ownerId, curriculumOwnerId),
+            eq(objectivesTable.grade, class6Curriculum.grade),
+          ),
+        )
+        .orderBy(asc(curriculumUploadsTable.uploadedAt), asc(objectivesTable.sequence))
+    : [];
+
+  const objectives = [
+    ...class6Curriculum.objectives,
+    ...importedRows.map((row) => ({
+      id: row.id,
+      subject: row.subject,
+      strand: row.strand,
+      topic: row.topic,
+      objective: row.objective,
+      term: row.term,
+      source: row.sourceTitle,
+      sequence: row.sequence,
+    })),
+  ];
+  const subjectColors = new Map(
+    class6Curriculum.subjects.map((subject) => [subject.name, subject.color]),
+  );
+  const subjectGroups = new Map<string, { objectiveCount: number; strands: Set<string> }>();
+  for (const objective of objectives) {
+    const group = subjectGroups.get(objective.subject) ?? {
+      objectiveCount: 0,
+      strands: new Set<string>(),
+    };
+    group.objectiveCount += 1;
+    group.strands.add(objective.strand);
+    subjectGroups.set(objective.subject, group);
+  }
+
+  res.json(
+    GetClass6CurriculumResponse.parse({
+      ...class6Curriculum,
+      subjects: [...subjectGroups.entries()].map(([name, group]) => ({
+        name,
+        objectiveCount: group.objectiveCount,
+        color: subjectColors.get(name) ?? "#167D77",
+        strands: [...group.strands],
+      })),
+      objectives,
+    }),
+  );
 });
 
 router.get("/curricula/uploads", async (req, res): Promise<void> => {
