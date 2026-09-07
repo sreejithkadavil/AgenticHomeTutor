@@ -415,7 +415,10 @@ router.get("/dashboard", async (req, res): Promise<void> => {
       );
     }, 0) / 60_000,
   );
-  const sessionsThisWeek = sessionRows.filter(
+  const meaningfulSessionRows = sessionRows.filter(
+    (session) => session.turnCount > 0 || session.status === "completed",
+  );
+  const sessionsThisWeek = meaningfulSessionRows.filter(
     (session) => session.startedAt >= weekStart,
   ).length;
   const weakArea = [...grouped.entries()]
@@ -426,7 +429,7 @@ router.get("/dashboard", async (req, res): Promise<void> => {
     )[0]?.[0] ?? "";
 
   const recentActivity = [
-    ...sessionRows.map((session) => ({
+    ...meaningfulSessionRows.map((session) => ({
       id: `session-${session.id}`,
       title: session.status === "completed" ? `${session.subject} session completed` : `${session.subject} session started`,
       detail: `${session.topic} · ${session.turnCount} ${session.turnCount === 1 ? "response" : "responses"}`,
@@ -682,6 +685,39 @@ router.post(
 
     if (!selected) {
       res.status(404).json({ error: "No learning objectives available" });
+      return;
+    }
+
+    const [recentEmptySession] = await db
+      .select()
+      .from(sessionsTable)
+      .where(
+        and(
+          eq(sessionsTable.studentId, params.data.studentId),
+          eq(sessionsTable.objectiveId, selected.objectiveId),
+          eq(sessionsTable.status, "active"),
+          eq(sessionsTable.turnCount, 0),
+          gte(sessionsTable.startedAt, new Date(Date.now() - 2 * 60_000)),
+        ),
+      )
+      .orderBy(desc(sessionsTable.startedAt))
+      .limit(1);
+
+    if (recentEmptySession) {
+      res.status(200).json(
+        StartStudySessionResponse.parse({
+          id: recentEmptySession.id,
+          studentId: recentEmptySession.studentId,
+          subject: selected.subject,
+          topic: selected.topic,
+          objective: selected.objective,
+          prompt: recentEmptySession.currentPrompt,
+          promptType: "explain",
+          turnCount: 0,
+          estimatedMinutes: 12,
+          voiceReady: false,
+        }),
+      );
       return;
     }
 

@@ -29,6 +29,7 @@ export default function Study() {
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const studentTranscriptRef = useRef("");
   const assistantTranscriptRef = useRef("");
+  const sessionStartRequestedRef = useRef(false);
   
   const [history, setHistory] = useState<{ role: 'tutor' | 'student', content: string, type?: string }[]>([]);
   const [mastery, setMastery] = useState(0.4);
@@ -46,7 +47,8 @@ export default function Study() {
   }, [history]);
 
   useEffect(() => {
-    if (!student || sessionId || startSession.isPending || startSession.isError) return;
+    if (!student || sessionId || sessionStartRequestedRef.current || startSession.isError) return;
+    sessionStartRequestedRef.current = true;
     const params = new URLSearchParams(search);
     const subject = params.get("subject") ?? undefined;
     const objectiveId = params.get("objectiveId") ?? undefined;
@@ -54,6 +56,9 @@ export default function Study() {
       onSuccess: (session) => {
         setSessionId(session.id); setSessionPrompt(session.objective);
         setHistory([{ role: "tutor", content: session.prompt, type: session.promptType }]);
+      },
+      onError: () => {
+        sessionStartRequestedRef.current = false;
       },
     });
   }, [student, sessionId, startSession, search]);
@@ -80,7 +85,10 @@ export default function Study() {
         <p className="text-sm text-muted-foreground">
           {startSession.error instanceof Error ? startSession.error.message : "Something went wrong. Please try again."}
         </p>
-        <Button onClick={() => startSession.reset()}>Try Again</Button>
+        <Button onClick={() => {
+          sessionStartRequestedRef.current = false;
+          startSession.reset();
+        }}>Try Again</Button>
       </div>
     );
   }
