@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
-import { and, asc, desc, eq, gte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ne } from "drizzle-orm";
 import {
   attemptsTable,
   appUsersTable,
@@ -615,7 +615,10 @@ router.get("/students/:studentId/revision", async (req, res): Promise<void> => {
     .where(eq(revisionTable.studentId, params.data.studentId))
     .orderBy(asc(revisionTable.daysUntil));
 
-  res.json(GetStudentRevisionResponse.parse(rows));
+  const uniqueRows = [...new Map(
+    rows.map((row) => [row.objectiveId, row]),
+  ).values()];
+  res.json(GetStudentRevisionResponse.parse(uniqueRows));
 });
 
 router.post(
@@ -1071,7 +1074,44 @@ router.post("/study-sessions/:sessionId/realtime-turns", async (req, res): Promi
     await tx.update(sessionsTable).set({ turnCount }).where(eq(sessionsTable.id, row.session.id));
     await tx.update(masteryTable).set({ mastery, trend: delta > 0 ? "up" : "down", lastPracticed: "Just now", updatedAt: new Date() }).where(eq(masteryTable.id, row.mastery.id));
     await tx.insert(attemptsTable).values({ id: randomUUID(), sessionId: row.session.id, answer, inputMode: "voice", evaluation, misconception, metadata: { assistantTranscript: body.data.assistantTranscript, usage: body.data.usage, masteryBefore: row.mastery.mastery, masteryAfter: mastery } });
-    if (mastery < 0.7) await tx.insert(revisionTable).values({ id: randomUUID(), studentId: row.session.studentId, objectiveId: row.objective.id, dueLabel: "Tomorrow", daysUntil: 1, reason: "Realtime response showed this objective needs a short retest." });
+    const revisionWhere = and(
+      eq(revisionTable.studentId, row.session.studentId),
+      eq(revisionTable.objectiveId, row.objective.id),
+    );
+    if (mastery < 0.7) {
+      const existing = await tx
+        .select({ id: revisionTable.id })
+        .from(revisionTable)
+        .where(revisionWhere)
+        .orderBy(asc(revisionTable.daysUntil), asc(revisionTable.id));
+      const [keep, ...duplicates] = existing;
+      if (keep) {
+        await tx
+          .update(revisionTable)
+          .set({
+            dueLabel: "Tomorrow",
+            daysUntil: 1,
+            reason: "Realtime response showed this objective needs a short retest.",
+          })
+          .where(eq(revisionTable.id, keep.id));
+        if (duplicates.length) {
+          await tx
+            .delete(revisionTable)
+            .where(and(revisionWhere, ne(revisionTable.id, keep.id)));
+        }
+      } else {
+        await tx.insert(revisionTable).values({
+          id: randomUUID(),
+          studentId: row.session.studentId,
+          objectiveId: row.objective.id,
+          dueLabel: "Tomorrow",
+          daysUntil: 1,
+          reason: "Realtime response showed this objective needs a short retest.",
+        });
+      }
+    } else {
+      await tx.delete(revisionTable).where(revisionWhere);
+    }
   });
   res.json(SubmitTutorTurnResponse.parse({ sessionId: row.session.id, response: body.data.assistantTranscript, responseType: evaluation === "correct" ? "encourage" : "hint", evaluation, mastery, nextPrompt: "Explain one more example in your own words.", nextPromptType: "question", turnCount, misconception, canUseVoice: true, subject: row.objective.subject, topic: row.objective.topic, objective: row.objective.objective }));
 });
