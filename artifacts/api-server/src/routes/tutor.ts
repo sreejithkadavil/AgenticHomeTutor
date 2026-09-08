@@ -1130,8 +1130,9 @@ router.post("/realtime/client-secret", async (req, res): Promise<void> => {
         output: { voice: "marin" },
       },
       instructions: [
-        `You are a patient voice tutor for ${student.name}. Focus only on this objective: ${session.objective.objective}.`,
-        "Ask one short question at a time, wait for an answer, give age-appropriate hints rather than answers, and keep the learner safe and on task.",
+        `You are a warm, upbeat voice tutor for ${student.name}, a Grade 6 student — think favorite teacher who genuinely loves this subject, not a script reader. Focus only on this objective: ${session.objective.objective}.`,
+        `Ask one short question at a time and wait for an answer. React like a real person: when ${student.name} gets something right, celebrate it specifically and by name ('Yes, exactly right!') before moving on. When they're off track, stay curious and encouraging rather than clinical, and give a small age-appropriate hint rather than the answer.`,
+        "Keep your own turns short and conversational, not a lecture, and keep the learner safe and on task.",
         ...(session.objective.sourceExcerpt
           ? [`Ground what you say in this excerpt from ${student.name}'s own school material — use its specific terms and examples rather than generic knowledge:\n"""\n${session.objective.sourceExcerpt}\n"""`]
           : []),

@@ -9,6 +9,10 @@ import { Progress } from "@/components/ui/progress";
 import { Mic, MicOff, Send, BrainCircuit, CheckCircle2, AlertCircle, Loader2, PhoneOff, VolumeX, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// A Grade 6 attention span wears out well before an hour — end the session
+// on its own after a reasonable stretch instead of letting it run indefinitely.
+const MAX_SESSION_SECONDS = 25 * 60;
+
 export default function Study() {
   const { student } = useActiveStudent();
   const [, setLocation] = useLocation();
@@ -23,6 +27,8 @@ export default function Study() {
   const [estimatedCostUsd, setEstimatedCostUsd] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState<{ student: string; assistant: string }>({ student: "", assistant: "" });
+  const [topicsCovered, setTopicsCovered] = useState<Set<string>>(new Set());
+  const [recap, setRecap] = useState<{ topic: string; learned: string; mastery: number; nextStep: string; nextRevision: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -47,6 +53,11 @@ export default function Study() {
   }, [history]);
 
   useEffect(() => {
+    if (!sessionPrompt) return;
+    setTopicsCovered((prev) => (prev.has(sessionPrompt) ? prev : new Set(prev).add(sessionPrompt)));
+  }, [sessionPrompt]);
+
+  useEffect(() => {
     if (!student || sessionId || sessionStartRequestedRef.current || startSession.isError) return;
     sessionStartRequestedRef.current = true;
     const params = new URLSearchParams(search);
@@ -68,12 +79,47 @@ export default function Study() {
   }, []);
 
   useEffect(() => {
-    if (!sessionId || elapsedSeconds >= 3600) return;
+    if (!sessionId || elapsedSeconds >= MAX_SESSION_SECONDS) return;
     const timer = window.setInterval(() => setElapsedSeconds((seconds) => seconds + 1), 1000);
     return () => window.clearInterval(timer);
   }, [sessionId, elapsedSeconds]);
 
   if (!student) return null;
+
+  if (recap) {
+    return (
+      <div className="max-w-md mx-auto mt-20 text-center space-y-5 animate-in fade-in slide-in-from-bottom-2">
+        <div className="w-16 h-16 mx-auto rounded-full bg-green-50 dark:bg-green-950/30 flex items-center justify-center">
+          <CheckCircle2 className="w-8 h-8 text-green-600 dark:text-green-400" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold font-serif">Nice work, {student.name}!</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            You covered {topicsCovered.size} {topicsCovered.size === 1 ? "topic" : "topics"} in {String(Math.floor(elapsedSeconds / 60)).padStart(2, "0")}:{String(elapsedSeconds % 60).padStart(2, "0")} today.
+          </p>
+        </div>
+        <Card className="text-left shadow-sm">
+          <CardContent className="p-5 space-y-3">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">What you learned</p>
+              <p className="text-sm mt-1">{recap.learned}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mastery on {recap.topic}</p>
+              <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden mt-2">
+                <div className="h-full bg-accent transition-all duration-1000 ease-out" style={{ width: `${recap.mastery * 100}%` }} />
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Coming up next</p>
+              <p className="text-sm mt-1">{recap.nextStep} · Revisit {recap.nextRevision.toLowerCase()}.</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Button className="w-full" onClick={() => setLocation("/user-portal")}>Back to Dashboard</Button>
+      </div>
+    );
+  }
 
   if (!sessionId && startSession.isError) {
     return (
@@ -128,13 +174,14 @@ export default function Study() {
   const handleComplete = () => {
     if (!sessionId) return;
     completeSession.mutate({ sessionId }, {
-      onSettled: () => {
-        setLocation("/user-portal");
-      }
+      onSuccess: (data) => {
+        setRecap({ topic: data.topic, learned: data.learned, mastery: data.mastery, nextStep: data.nextStep, nextRevision: data.nextRevision });
+      },
+      onError: () => setLocation("/user-portal"),
     });
   };
   useEffect(() => {
-    if (elapsedSeconds >= 3600 && sessionId) { disconnectVoice(); handleComplete(); }
+    if (elapsedSeconds >= MAX_SESSION_SECONDS && sessionId) { disconnectVoice(); handleComplete(); }
   }, [elapsedSeconds, sessionId]);
   const disconnectVoice = () => {
     dataChannelRef.current?.close(); dataChannelRef.current = null;
@@ -226,6 +273,10 @@ export default function Study() {
           <p className="text-sm text-muted-foreground mt-1">Goal: {sessionPrompt ?? "Preparing your learning objective."}</p>
         </div>
         <div className="flex items-center gap-4 text-sm font-medium">
+          <div className="flex flex-col items-end gap-1">
+            <span className="text-muted-foreground">Topics covered</span>
+            <span className="font-bold text-primary tabular-nums">{topicsCovered.size}</span>
+          </div>
           <div className="flex flex-col items-end gap-1">
             <span className="text-muted-foreground">Session Mastery</span>
             <div className="w-32 h-2.5 bg-muted rounded-full overflow-hidden">

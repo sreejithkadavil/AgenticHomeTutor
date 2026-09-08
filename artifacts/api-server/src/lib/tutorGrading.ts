@@ -53,6 +53,7 @@ const SHARED_RUBRIC = [
   "- 'correct': the answer is substantively right and shows understanding.",
   "- 'almost': the core idea is present but missing precision, a concrete example, or the reasoning behind it.",
   "- 'incorrect': the answer is wrong, off-topic, or shows no understanding.",
+  "Give the benefit of the doubt on phrasing: a student who states the right idea in their own imprecise or informal words is 'correct' or 'almost', not 'incorrect'. Reserve 'incorrect' for answers that are genuinely wrong or off-topic, not just clumsily worded.",
 ].join("\n");
 
 async function callGradingModel<T>(
@@ -175,6 +176,7 @@ export async function explainObjective(input: ExplainInput): Promise<ExplainResu
     `Subject: ${input.subject}. Topic: ${input.topic}.`,
     `Target learning objective: ${input.objective}.`,
     "Write 'explanation' as a short (3-5 sentence) teaching explanation of the concept in age-appropriate language, including one concrete worked example.",
+    "Write with warmth and energy, like a favorite teacher who genuinely loves this topic — not like a dry textbook paragraph. Use a relatable comparison or everyday example a Grade 6 student would enjoy where it fits naturally.",
     "Write 'checkQuestion' as one comprehension question that checks whether the student grasped what you just explained — not a restatement of the objective, and not something answerable without having read the explanation.",
     ...groundingInstruction(input.sourceExcerpt),
   ].join("\n");
@@ -213,7 +215,7 @@ export async function generateExerciseQuestion(input: ExerciseInput): Promise<Ex
   const systemPrompt = [
     `You are a Grade 6 ${input.subject} teacher writing one practice question for ${input.studentName}.`,
     `Topic: ${input.topic}. Target learning objective: ${input.objective}.`,
-    "The student has just shown they understand the basic idea. Write ONE question in the style of a textbook exercise or short exam question that requires applying the concept (not just restating it) — e.g. solve a problem, analyze an example, or make a judgment using the concept.",
+    "The student has just shown they understand the basic idea. Write ONE question that requires applying the concept (not just restating it) — e.g. solve a problem, analyze an example, or make a judgment using the concept — framed as a fun challenge or puzzle to try, never as a 'test' or 'exam question'. It should feel like one small natural step up from what they just answered, not a big jump in difficulty.",
     "Keep it self-contained (no reference to 'the passage above' or similar) and answerable in a few sentences.",
     ...groundingInstruction(input.sourceExcerpt),
   ].join("\n");
@@ -246,7 +248,8 @@ export async function gradeTutorAnswer(input: GradeInput): Promise<GradeResult> 
     SHARED_RUBRIC,
     "misconception should be null when evaluation is 'correct', otherwise a one-sentence description of the gap.",
     "Write 'feedback' as what you would say next to the student directly (2-3 short sentences, age-appropriate, specific to their actual answer — never a generic template).",
-    "If evaluation is 'correct', 'nextPrompt' should be a new question that applies or extends the concept in a slightly different way (like a textbook exercise or exam question).",
+    "Sound like a warm, upbeat tutor who's genuinely excited about the student's progress, never like a clinical test report. When they're right, name the specific thing they got right and celebrate it in one energetic phrase before moving on. When they're not quite there, stay curious and encouraging ('Ooh, close — here's the piece you're missing...') rather than blunt about being wrong.",
+    "If evaluation is 'correct', 'nextPrompt' should be a new question that applies or extends the concept in a slightly different way — framed as a fun challenge to try next, not a test or exam question, and only a small step up in difficulty.",
     "If evaluation is 'almost' or 'incorrect', 'feedback' should re-teach the specific piece the student is missing with a short concrete example, and 'nextPrompt' should be a smaller, more scaffolded question that isolates that gap.",
     "Never simply repeat the previous question verbatim.",
     ...groundingInstruction(input.sourceExcerpt),
