@@ -44,6 +44,15 @@ export const objectivesTable = pgTable("learning_objectives", {
   source: text("source").notNull().default("Cambridge baseline"),
   sourceId: text("source_id"),
   sequence: integer("sequence").notNull().default(0),
+  /**
+   * A short excerpt or close paraphrase of the actual source material this
+   * objective was drawn from (a parent's uploaded syllabus/textbook/notes).
+   * Passed to every explanation/grading/exercise call so tutoring is
+   * grounded in what the student's own material actually says instead of
+   * the model's generic knowledge of the topic. Null for the built-in
+   * Cambridge baseline, which has no source document to quote.
+   */
+  sourceExcerpt: text("source_excerpt"),
 });
 
 export const curriculumUploadsTable = pgTable("curriculum_uploads", {

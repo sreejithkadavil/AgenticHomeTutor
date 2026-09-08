@@ -8,6 +8,8 @@ export type Class6Objective = {
   source: string;
   sequence: number;
   color: string;
+  /** Excerpt from the parent's uploaded material this objective was drawn from, if any. */
+  sourceExcerpt?: string | null;
 };
 
 const SOURCE = "Cambridge Lower Secondary baseline";

@@ -268,6 +268,7 @@ async function parseImportedObjectives(input: {
       term: typeof value?.term === "string" ? value.term : input.term,
       source: "Parent-uploaded school syllabus",
       sequence: index + 1,
+      sourceExcerpt: typeof value?.sourceExcerpt === "string" ? value.sourceExcerpt : null,
     }];
   });
 }
@@ -293,6 +294,7 @@ async function selectNextObjective(studentId: string, grade: string, subject: st
       subject: objectivesTable.subject,
       topic: objectivesTable.topic,
       objective: objectivesTable.objective,
+      sourceExcerpt: objectivesTable.sourceExcerpt,
       mastery: masteryTable.mastery,
     })
     .from(objectivesTable)
@@ -676,6 +678,7 @@ router.post(
         subject: objectivesTable.subject,
         topic: objectivesTable.topic,
         objective: objectivesTable.objective,
+        sourceExcerpt: objectivesTable.sourceExcerpt,
         mastery: masteryTable.mastery,
       })
       .from(objectivesTable)
@@ -743,6 +746,7 @@ router.post(
         subject: selected.subject,
         topic: selected.topic,
         objective: selected.objective,
+        sourceExcerpt: selected.sourceExcerpt,
       });
       prompt = `${taught.explanation}\n\n${taught.checkQuestion}`;
       promptType = "explain";
@@ -860,6 +864,7 @@ router.post(
         subject: row.objective.subject,
         topic: row.objective.topic,
         objective: row.objective.objective,
+        sourceExcerpt: row.objective.sourceExcerpt,
         priorPrompt: row.session.currentPrompt,
         studentAnswer: body.data.answer,
       });
@@ -914,6 +919,7 @@ router.post(
             subject: next.subject,
             topic: next.topic,
             objective: next.objective,
+            sourceExcerpt: next.sourceExcerpt,
           });
           responseText = `${feedback} Let's move on to something new.`;
           nextPromptText = `${taught.explanation}\n\n${taught.checkQuestion}`;
@@ -937,6 +943,7 @@ router.post(
           subject: row.objective.subject,
           topic: row.objective.topic,
           objective: row.objective.objective,
+          sourceExcerpt: row.objective.sourceExcerpt,
         });
         nextPromptText = exercise.question;
         nextPromptType = "reflect";
@@ -1122,7 +1129,13 @@ router.post("/realtime/client-secret", async (req, res): Promise<void> => {
         },
         output: { voice: "marin" },
       },
-      instructions: `You are a patient voice tutor for ${student.name}. Focus only on this objective: ${session.objective.objective}. Ask one short question at a time, wait for an answer, give age-appropriate hints rather than answers, and keep the learner safe and on task.`,
+      instructions: [
+        `You are a patient voice tutor for ${student.name}. Focus only on this objective: ${session.objective.objective}.`,
+        "Ask one short question at a time, wait for an answer, give age-appropriate hints rather than answers, and keep the learner safe and on task.",
+        ...(session.objective.sourceExcerpt
+          ? [`Ground what you say in this excerpt from ${student.name}'s own school material — use its specific terms and examples rather than generic knowledge:\n"""\n${session.objective.sourceExcerpt}\n"""`]
+          : []),
+      ].join(" "),
     }}),
   });
   if (!response.ok) { req.log.error({ status: response.status }, "OpenAI realtime secret request failed"); res.status(502).json({ error: "Unable to start voice tutoring" }); return; }
@@ -1150,6 +1163,7 @@ router.post("/study-sessions/:sessionId/realtime-turns", async (req, res): Promi
       subject: row.objective.subject,
       topic: row.objective.topic,
       objective: row.objective.objective,
+      sourceExcerpt: row.objective.sourceExcerpt,
       context: body.data.assistantTranscript,
       studentAnswer: answer,
     });

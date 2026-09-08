@@ -8,6 +8,22 @@ interface ObjectiveContext {
   subject: string;
   topic: string;
   objective: string;
+  /** Excerpt from the student's own uploaded syllabus/textbook this objective was drawn from, if any. */
+  sourceExcerpt?: string | null;
+}
+
+/**
+ * When the objective has a real source excerpt, instructs the model to
+ * ground its output in that specific material instead of generic knowledge
+ * of the topic — without this, every explanation/question/grading call only
+ * ever sees a one-sentence objective summary and falls back to whatever the
+ * model already knows about the subject in general.
+ */
+function groundingInstruction(sourceExcerpt?: string | null): string[] {
+  if (!sourceExcerpt) return [];
+  return [
+    `Ground your response in this excerpt from the student's own school material — use its specific terminology, examples, and level of detail, and prefer what it says over generic knowledge where the two differ:\n"""\n${sourceExcerpt}\n"""`,
+  ];
 }
 
 interface ClassifyInput extends ObjectiveContext {
@@ -114,6 +130,7 @@ export async function classifyTutorAnswer(input: ClassifyInput): Promise<Classif
     `The tutor just said: "${input.context}"`,
     SHARED_RUBRIC,
     "misconception should be null when evaluation is 'correct', otherwise a one-sentence description of the gap.",
+    ...groundingInstruction(input.sourceExcerpt),
   ].join("\n");
 
   const result = await callGradingModel<ClassifyResult>(
@@ -159,6 +176,7 @@ export async function explainObjective(input: ExplainInput): Promise<ExplainResu
     `Target learning objective: ${input.objective}.`,
     "Write 'explanation' as a short (3-5 sentence) teaching explanation of the concept in age-appropriate language, including one concrete worked example.",
     "Write 'checkQuestion' as one comprehension question that checks whether the student grasped what you just explained — not a restatement of the objective, and not something answerable without having read the explanation.",
+    ...groundingInstruction(input.sourceExcerpt),
   ].join("\n");
 
   return callGradingModel<ExplainResult>(
@@ -197,6 +215,7 @@ export async function generateExerciseQuestion(input: ExerciseInput): Promise<Ex
     `Topic: ${input.topic}. Target learning objective: ${input.objective}.`,
     "The student has just shown they understand the basic idea. Write ONE question in the style of a textbook exercise or short exam question that requires applying the concept (not just restating it) — e.g. solve a problem, analyze an example, or make a judgment using the concept.",
     "Keep it self-contained (no reference to 'the passage above' or similar) and answerable in a few sentences.",
+    ...groundingInstruction(input.sourceExcerpt),
   ].join("\n");
 
   return callGradingModel<ExerciseResult>(
@@ -230,6 +249,7 @@ export async function gradeTutorAnswer(input: GradeInput): Promise<GradeResult> 
     "If evaluation is 'correct', 'nextPrompt' should be a new question that applies or extends the concept in a slightly different way (like a textbook exercise or exam question).",
     "If evaluation is 'almost' or 'incorrect', 'feedback' should re-teach the specific piece the student is missing with a short concrete example, and 'nextPrompt' should be a smaller, more scaffolded question that isolates that gap.",
     "Never simply repeat the previous question verbatim.",
+    ...groundingInstruction(input.sourceExcerpt),
   ].join("\n");
 
   const result = await callGradingModel<GradeResult>(
@@ -260,6 +280,7 @@ export interface ExtractedObjective {
   strand: string;
   topic: string;
   objective: string;
+  sourceExcerpt: string;
 }
 
 const MAX_EXTRACTION_INPUT_CHARS = 60_000;
@@ -284,6 +305,7 @@ export async function extractObjectivesFromContent(input: {
     `If the text doesn't say otherwise, assume the subject is "${input.defaultSubject}" and the term is "${input.defaultTerm}".`,
     "Read the text and list the distinct topics or lessons it actually teaches as real, assessable learning objectives (e.g. 'Explain how the digestive system breaks down food during digestion') — not chapter titles alone, and not a summary of the whole document.",
     "Ignore front matter, publisher marketing, tables of contents, indexes, page headers/footers, and anything that isn't teaching content.",
+    "For each objective, also write 'sourceExcerpt': a short (2-5 sentence) quote or close paraphrase taken directly from the text that explains or introduces that specific topic. This will be handed to the tutor later as the ONLY grounding it gets in this material, so it must contain real content from the text (specific terms, facts, examples) — not a restatement of the objective and not generic knowledge you already have about the subject.",
     `Return at most ${MAX_EXTRACTED_OBJECTIVES} objectives, one entry per distinct topic — fewer is fine if the text doesn't cover that many. If the text has no real teaching content at all, return an empty list.`,
   ].join("\n");
 
@@ -303,8 +325,9 @@ export async function extractObjectivesFromContent(input: {
               strand: { type: "string" },
               topic: { type: "string" },
               objective: { type: "string" },
+              sourceExcerpt: { type: "string" },
             },
-            required: ["subject", "strand", "topic", "objective"],
+            required: ["subject", "strand", "topic", "objective", "sourceExcerpt"],
             additionalProperties: false,
           },
         },
